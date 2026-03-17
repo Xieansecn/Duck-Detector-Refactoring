@@ -71,6 +71,15 @@ fun AuthorCard(
                     AuthorContribution.Kotlin,
                 ),
             ),
+            AuthorProfile(
+                name = "芙兰朵布丁",
+                portraitRes = R.drawable.baka,
+                contributionSummary = "TEE & Zygisk",
+                contributions = listOf(
+                    AuthorContribution.Cpp,
+                    AuthorContribution.Kotlin,
+                ),
+            )
         )
     }
     val pagerState = rememberPagerState(pageCount = { authors.size })
