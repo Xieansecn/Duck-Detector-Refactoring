@@ -22,6 +22,7 @@ enum class DangerousDetectionMethodKind(
     FUSE_STAT("FUSE stat"),
     NATIVE_DATA_STAT("Native /data/data stat"),
     SPECIAL_PATH("Special path"),
+    SCENE_LOOPBACK("Scene loopback"),
     THANOX_IPC("IPC Probe (DROPBOX_SERVICE)"),
     ACCESSIBILITY_SERVICE("Accessibility Service"),
 }

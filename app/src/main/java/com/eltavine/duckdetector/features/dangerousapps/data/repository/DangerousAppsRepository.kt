@@ -6,6 +6,7 @@ import android.os.Parcel
 import android.provider.Settings
 import android.text.TextUtils
 import com.eltavine.duckdetector.features.dangerousapps.data.native.DangerousAppsNativeBridge
+import com.eltavine.duckdetector.features.dangerousapps.data.probes.SceneLoopbackProbe
 import com.eltavine.duckdetector.features.dangerousapps.data.rules.DangerousAppsCatalog
 import com.eltavine.duckdetector.features.dangerousapps.domain.DangerousAppFinding
 import com.eltavine.duckdetector.features.dangerousapps.domain.DangerousAppTarget
@@ -22,6 +23,7 @@ import kotlinx.coroutines.withContext
 class DangerousAppsRepository(
     private val context: Context,
     private val nativeBridge: DangerousAppsNativeBridge = DangerousAppsNativeBridge(),
+    private val sceneLoopbackProbe: SceneLoopbackProbe = SceneLoopbackProbe(),
 ) {
 
     suspend fun scan(): DangerousAppsReport = withContext(Dispatchers.IO) {
@@ -130,6 +132,19 @@ class DangerousAppsRepository(
             )
         }
 
+        sceneLoopbackProbe.probe()
+            .takeIf { it.detected }
+            ?.let { result ->
+                appendMethod(
+                    detectedApps = detectedApps,
+                    packageName = SCENE_PACKAGE,
+                    method = DangerousDetectionMethod(
+                        kind = DangerousDetectionMethodKind.SCENE_LOOPBACK,
+                        detail = result.detail,
+                    ),
+                )
+            }
+
         val findings = buildFindings(detectedApps)
         val hiddenFromPackageManager = if (packageVisibility == DangerousPackageVisibility.FULL) {
             findings.filter { finding ->
@@ -181,6 +196,7 @@ class DangerousAppsRepository(
             add(DangerousDetectionMethodKind.FUSE_STAT)
             add(DangerousDetectionMethodKind.NATIVE_DATA_STAT)
             add(DangerousDetectionMethodKind.SPECIAL_PATH)
+            add(DangerousDetectionMethodKind.SCENE_LOOPBACK)
             add(DangerousDetectionMethodKind.THANOX_IPC)
             add(DangerousDetectionMethodKind.ACCESSIBILITY_SERVICE)
         }

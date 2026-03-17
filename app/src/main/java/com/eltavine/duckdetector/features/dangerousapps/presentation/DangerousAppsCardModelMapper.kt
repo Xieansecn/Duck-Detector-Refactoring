@@ -64,7 +64,7 @@ class DangerousAppsCardModelMapper {
     private fun buildSummary(report: DangerousAppsReport): String {
         return when (report.stage) {
             DangerousAppsStage.LOADING ->
-                "PackageManager, storage mirrors, IPC, accessibility, and native package-path probes are collecting local evidence."
+                "PackageManager, storage mirrors, loopback, IPC, accessibility, and native package-path probes are collecting local evidence."
 
             DangerousAppsStage.FAILED ->
                 report.issues.firstOrNull()
@@ -83,7 +83,7 @@ class DangerousAppsCardModelMapper {
                     "Storage-side probes still ran, but a clean result may under-report installed tools when PackageManager visibility is scoped."
 
                 else ->
-                    "PackageManager, storage, IPC, accessibility, and native package-path probes did not surface known high-risk tools."
+                    "PackageManager, storage, loopback, IPC, accessibility, and native package-path probes did not surface known high-risk tools."
             }
         }
     }

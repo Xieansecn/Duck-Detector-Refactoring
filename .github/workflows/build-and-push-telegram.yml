@@ -1,0 +1,136 @@
+name: Build APK And Push To Telegram
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    environment: Telegram
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Make Gradle wrapper executable
+        shell: bash
+        run: chmod +x gradlew
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "cmake;3.22.1" \
+            "ndk;28.2.13676358"
+
+      - name: Prepare release keystore
+        id: keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD}" ] || [ -z "${ANDROID_KEY_ALIAS}" ] || [ -z "${ANDROID_KEY_PASSWORD}" ]; then
+            echo "Missing release signing secrets. Configure ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD in the Telegram environment." >&2
+            exit 1
+          fi
+
+          keystore_path="$RUNNER_TEMP/release.keystore"
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$keystore_path"
+          echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APK
+        id: build
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.keystore_path }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          start_time=$(date +%s)
+          ./gradlew :app:assembleRelease
+          end_time=$(date +%s)
+
+          duration_seconds=$((end_time - start_time))
+          duration_minutes=$((duration_seconds / 60))
+          duration_remainder=$((duration_seconds % 60))
+
+          printf -v duration_human "%dm %02ds" "$duration_minutes" "$duration_remainder"
+
+          echo "duration_seconds=$duration_seconds" >> "$GITHUB_OUTPUT"
+          echo "duration_human=$duration_human" >> "$GITHUB_OUTPUT"
+
+      - name: Collect artifact metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apk_path=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name 'Duck Detector-*-Universal.apk' | head -n 1)
+
+          if [ -z "$apk_path" ]; then
+            echo "Release APK not found." >&2
+            exit 1
+          fi
+
+          commit_subject=$(git log -1 --pretty=%s)
+          commit_author=$(git log -1 --pretty=%an)
+
+          {
+            echo "apk_path=$apk_path"
+            echo "apk_name=$(basename "$apk_path")"
+            echo "caption<<EOF"
+            printf '%s\nCommit author: %s\nBuild time: %s\n' "$commit_subject" "$commit_author" "${{ steps.build.outputs.duration_human }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.apk_name }}
+          path: ${{ steps.metadata.outputs.apk_path }}
+          if-no-files-found: error
+
+      - name: Push APK to Telegram channel
+        shell: bash
+        env:
+          APK_PATH: ${{ steps.metadata.outputs.apk_path }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CAPTION: ${{ steps.metadata.outputs.caption }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "document=@${APK_PATH}" \
+            --form-string "caption=${TELEGRAM_CAPTION}"
