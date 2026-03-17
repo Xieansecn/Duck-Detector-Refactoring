@@ -75,6 +75,11 @@ namespace ducktee::trickystore {
             bool found = false;
         };
 
+        struct MapAccess {
+            bool found = false;
+            bool readable = false;
+        };
+
         constexpr int kHoneypotIterations = 40;
         constexpr std::uint64_t kHoneypotThresholdNs = 10'000ULL;
 
@@ -145,6 +150,31 @@ namespace ducktee::trickystore {
                 break;
             }
             return info;
+        }
+
+        MapAccess find_map_access_for_address(const uintptr_t address) {
+            MapAccess access;
+            std::ifstream maps("/proc/self/maps");
+            if (!maps.is_open()) {
+                return access;
+            }
+
+            std::string line;
+            while (std::getline(maps, line)) {
+                unsigned long long start = 0;
+                unsigned long long end = 0;
+                char perms[5] = {};
+                if (std::sscanf(line.c_str(), "%llx-%llx %4s", &start, &end, perms) != 3) {
+                    continue;
+                }
+                if (address < start || address >= end) {
+                    continue;
+                }
+                access.found = true;
+                access.readable = perms[0] == 'r';
+                return access;
+            }
+            return access;
         }
 
         bool maps_contain_trickystore(std::vector<std::string> *findings) {
@@ -380,6 +410,14 @@ namespace ducktee::trickystore {
             Dl_info ioctl_info{};
             if (!dladdr(ioctl_addr, &ioctl_info) || ioctl_info.dli_fname == nullptr) {
                 snapshot.detail = "Failed to resolve the backing library for ioctl.";
+                return snapshot;
+            }
+
+            const MapAccess ioctl_map =
+                    find_map_access_for_address(reinterpret_cast<uintptr_t>(ioctl_addr));
+            if (!ioctl_map.found || !ioctl_map.readable) {
+                snapshot.detail =
+                        "Skipped ioctl inline hook inspection because the resolved code page is not readable.";
                 return snapshot;
             }
 
