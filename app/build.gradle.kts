@@ -15,8 +15,8 @@ android {
         applicationId = "com.eltavine.duckdetector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 201
-        versionName = "26.3.1-alpha"
+        versionCode = 202
+        versionName = "26.3.2-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -122,6 +122,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    implementation(libs.compose.icons.simple)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.bouncycastle.bcprov)
     implementation(libs.soter.wrapper)
