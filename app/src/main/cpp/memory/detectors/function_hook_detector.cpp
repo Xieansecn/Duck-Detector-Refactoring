@@ -193,6 +193,10 @@ namespace duckdetector::memory {
                 );
             }
 
+            if (!entry.has_value() || !entry->readable) {
+                continue;
+            }
+
             const auto *bytes = static_cast<const std::uint8_t *>(address_ptr);
             if (looks_like_branch_instruction(bytes) && !looks_like_expected_prologue(bytes)) {
                 signals.inline_hook = true;
