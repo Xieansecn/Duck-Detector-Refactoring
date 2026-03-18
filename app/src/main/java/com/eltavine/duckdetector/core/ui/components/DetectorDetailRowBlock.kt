@@ -1,0 +1,78 @@
+package com.eltavine.duckdetector.core.ui.components
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.eltavine.duckdetector.core.ui.model.DetectorStatus
+import com.eltavine.duckdetector.core.ui.presentation.rememberStatusAppearance
+
+@Composable
+fun DetectorDetailRowBlock(
+    label: String,
+    value: String,
+    status: DetectorStatus,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+    detailMonospace: Boolean = false,
+    statusIcon: ImageVector? = null,
+    verticalPadding: Dp = 14.dp,
+) {
+    val appearance = rememberStatusAppearance(status)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = verticalPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        WrapSafeText(
+            text = label,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = statusIcon ?: appearance.icon,
+                contentDescription = null,
+                tint = appearance.iconTint,
+                modifier = Modifier
+                    .padding(top = 1.dp)
+                    .size(16.dp),
+            )
+            WrapSafeText(
+                text = value,
+                style = MaterialTheme.typography.labelLarge,
+                color = appearance.iconTint,
+                textAlign = TextAlign.Center,
+            )
+        }
+        detail?.takeIf { it.isNotBlank() }?.let { resolvedDetail ->
+            WrapSafeText(
+                text = resolvedDetail,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = if (detailMonospace) FontFamily.Monospace else FontFamily.Default,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

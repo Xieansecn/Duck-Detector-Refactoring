@@ -36,6 +36,8 @@ import com.eltavine.duckdetector.features.systemproperties.domain.SystemProperti
 import com.eltavine.duckdetector.features.systemproperties.presentation.SystemPropertiesCardModelMapper
 import com.eltavine.duckdetector.features.tee.domain.TeeReport
 import com.eltavine.duckdetector.features.tee.presentation.TeeCardModelMapper
+import com.eltavine.duckdetector.features.virtualization.domain.VirtualizationReport
+import com.eltavine.duckdetector.features.virtualization.presentation.VirtualizationCardModelMapper
 import com.eltavine.duckdetector.features.zygisk.domain.ZygiskReport
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskCardModelMapper
 
@@ -55,6 +57,7 @@ object DashboardPreviewData {
     private val selinuxMapper = SelinuxCardModelMapper()
     private val suMapper = SuCardModelMapper()
     private val systemPropertiesMapper = SystemPropertiesCardModelMapper()
+    private val virtualizationMapper = VirtualizationCardModelMapper()
     private val zygiskMapper = ZygiskCardModelMapper()
 
     fun create(): DashboardUiState {
@@ -73,6 +76,7 @@ object DashboardPreviewData {
         val selinuxCard = selinuxMapper.map(SelinuxReport.loading())
         val suCard = suMapper.map(SuReport.loading())
         val systemPropertiesCard = systemPropertiesMapper.map(SystemPropertiesReport.loading())
+        val virtualizationCard = virtualizationMapper.map(VirtualizationReport.loading())
         val zygiskCard = zygiskMapper.map(ZygiskReport.loading())
         val contributions = listOf(
             DashboardDetectorContribution(
@@ -180,6 +184,14 @@ object DashboardPreviewData {
                 ready = false,
             ),
             DashboardDetectorContribution(
+                id = "virtualization",
+                title = virtualizationCard.title,
+                status = virtualizationCard.status,
+                headline = virtualizationCard.verdict,
+                summary = virtualizationCard.summary,
+                ready = false,
+            ),
+            DashboardDetectorContribution(
                 id = "zygisk",
                 title = zygiskCard.title,
                 status = zygiskCard.status,
@@ -206,6 +218,7 @@ object DashboardPreviewData {
                     DashboardDetectorCardEntry.Su(suCard),
                     DashboardDetectorCardEntry.SystemProperties(systemPropertiesCard),
                     DashboardDetectorCardEntry.Tee(teeCard),
+                    DashboardDetectorCardEntry.Virtualization(virtualizationCard),
                     DashboardDetectorCardEntry.Zygisk(zygiskCard),
                 ),
             ),

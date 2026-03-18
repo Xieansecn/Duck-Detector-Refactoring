@@ -52,6 +52,7 @@ set(MOUNT_SOURCES
 
 set(PRELOAD_SOURCES
     preload/early_detector.cpp
+    preload/virtualization_early_detector.cpp
     preload/preload_entry.cpp
 )
 
@@ -116,9 +117,18 @@ set(ZYGISK_SOURCES
     zygisk/fdtrap_bridge.cpp
 )
 
+set(VIRTUALIZATION_SOURCES
+    virtualization/egl_probe.cpp
+    virtualization/snapshot_builder.cpp
+    virtualization/honeypot_traps.cpp
+    virtualization/native_bridge.cpp
+)
+
 set(TEE_ASM_SOURCES)
+set(VIRTUALIZATION_ASM_SOURCES)
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     list(APPEND TEE_ASM_SOURCES asm/arm64/syscall_fastpath.S)
+    list(APPEND VIRTUALIZATION_ASM_SOURCES asm/arm64/virtualization_traps.S)
 endif()
 
 add_library(duckdetector SHARED
@@ -138,7 +148,9 @@ add_library(duckdetector SHARED
     ${NATIVE_ROOT_SOURCES}
     ${LSPOSED_SOURCES}
     ${ZYGISK_SOURCES}
+    ${VIRTUALIZATION_SOURCES}
     ${TEE_ASM_SOURCES}
+    ${VIRTUALIZATION_ASM_SOURCES}
 )
 
 include(CheckIPOSupported)
@@ -162,5 +174,7 @@ target_include_directories(duckdetector PRIVATE
 
 target_link_libraries(duckdetector
     android
+    EGL
+    GLESv2
     log
 )

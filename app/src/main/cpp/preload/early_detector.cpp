@@ -43,6 +43,13 @@ namespace duckdetector::preload {
             std::string superOptions;
         };
 
+        struct MountIdGapSummary {
+            bool reachedDataUserBoundary = false;
+            int missingCount = 0;
+            int firstMissingStart = 0;
+            int firstMissingEnd = 0;
+        };
+
         EarlyMountPreloadResult g_storedResult;
         bool g_hasRun = false;
         std::int64_t g_preloadTimestampNs = 0;
@@ -217,6 +224,53 @@ namespace duckdetector::preload {
             return false;
         }
 
+        bool summarize_data_mirror_mount_id_gap(
+                const std::vector<MountInfoEntry> &mounts,
+                std::size_t dataMirrorIndex,
+                MountIdGapSummary &summary
+        ) {
+            if (dataMirrorIndex == 0 || dataMirrorIndex >= mounts.size()) {
+                return false;
+            }
+
+            int currentId = mounts[dataMirrorIndex].id;
+            for (int scanIndex = static_cast<int>(dataMirrorIndex) - 1;
+                 scanIndex >= 0 && currentId - mounts[static_cast<std::size_t>(scanIndex)].id < 10;
+                 --scanIndex) {
+                const auto &candidate = mounts[static_cast<std::size_t>(scanIndex)];
+                if (candidate.id == currentId - 1) {
+                    currentId = candidate.id;
+                    if (candidate.target.starts_with("/data/user")) {
+                        summary.reachedDataUserBoundary = true;
+                        break;
+                    }
+                    continue;
+                }
+
+                const int gapSize = currentId - candidate.id - 1;
+                if (gapSize <= 0) {
+                    continue;
+                }
+
+                if (summary.firstMissingStart == 0) {
+                    summary.firstMissingStart = candidate.id + 1;
+                    summary.firstMissingEnd = currentId - 1;
+                }
+                summary.missingCount += gapSize;
+                currentId = candidate.id;
+
+                if (candidate.target.starts_with("/data/user")) {
+                    summary.reachedDataUserBoundary = true;
+                    break;
+                }
+            }
+
+            // Single missing IDs show up on some stock devices from transient teardown;
+            // only treat the /data_mirror chain as anomalous once the local walk shows a
+            // real multi-ID gap and we reached the expected /data/user boundary.
+            return summary.reachedDataUserBoundary && summary.missingCount >= 2;
+        }
+
     }  // namespace
 
     bool detect_futile_hide(EarlyMountPreloadResult &result) {
@@ -314,30 +368,16 @@ namespace duckdetector::preload {
             }
 
             if (mount.target == "/data_mirror") {
-                int currentId = mount.id;
-                for (int attempt = 0; attempt < 10; ++attempt) {
-                    const int previousId = currentId - 1;
-                    bool found = false;
-                    for (const auto &candidate: mounts) {
-                        if (candidate.id == previousId) {
-                            found = true;
-                            if (candidate.target.starts_with("/data/user")) {
-                                break;
-                            }
-                            currentId = previousId;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        detected = true;
-                        result.mountIdGapDetected = true;
-                        result.findings.push_back(
-                                "MOUNT_ID_GAP|Missing mount ID " + std::to_string(previousId) +
-                                " before /data_mirror|DANGER"
-                        );
-                        break;
-                    }
+                MountIdGapSummary summary;
+                if (summarize_data_mirror_mount_id_gap(mounts, index, summary)) {
+                    detected = true;
+                    result.mountIdGapDetected = true;
+                    result.findings.push_back(
+                            "MOUNT_ID_GAP|Missing " + std::to_string(summary.missingCount) +
+                            " mount IDs before /data_mirror (first gap " +
+                            std::to_string(summary.firstMissingStart) + "-" +
+                            std::to_string(summary.firstMissingEnd) + ")|DANGER"
+                    );
                 }
                 break;
             }

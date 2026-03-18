@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.eltavine.duckdetector.core.ui.components.DetectorCardFrame
+import com.eltavine.duckdetector.core.ui.components.DetectorDetailRowBlock
 import com.eltavine.duckdetector.core.ui.components.WrapSafeText
 import com.eltavine.duckdetector.core.ui.model.DetectorStatus
 import com.eltavine.duckdetector.core.ui.presentation.rememberStatusAppearance
@@ -363,36 +364,13 @@ private fun TeeFactGroup(
 private fun TeeFactRow(
     row: TeeFactRowModel,
 ) {
-    val appearance = rememberStatusAppearance(row.status)
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                imageVector = iconFor(row.icon),
-                contentDescription = null,
-                tint = appearance.iconTint,
-                modifier = Modifier.size(18.dp),
-            )
-            WrapSafeText(
-                text = row.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        WrapSafeText(
-            text = row.value,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
-    }
+    DetectorDetailRowBlock(
+        label = row.label,
+        value = row.value,
+        status = row.status,
+        statusIcon = iconFor(row.icon),
+        verticalPadding = 0.dp,
+    )
 }
 
 @Composable

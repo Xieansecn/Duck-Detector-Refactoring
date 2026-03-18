@@ -21,9 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.eltavine.duckdetector.core.ui.components.DetectorCardFrame
+import com.eltavine.duckdetector.core.ui.components.DetectorDetailRowBlock
 import com.eltavine.duckdetector.core.ui.components.DetectorSectionFrame
 import com.eltavine.duckdetector.core.ui.components.WrapSafeText
 import com.eltavine.duckdetector.core.ui.presentation.rememberStatusAppearance
@@ -208,58 +208,18 @@ private fun MemoryDetailRow(
     row: MemoryDetailRowModel,
 ) {
     val appearance = rememberStatusAppearance(row.status)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                imageVector = when {
-                    row.label.contains("vDSO", ignoreCase = true) -> Icons.Rounded.Memory
-                    row.label.contains("signal", ignoreCase = true) -> Icons.Rounded.Visibility
-                    else -> appearance.icon
-                },
-                contentDescription = null,
-                tint = appearance.iconTint,
-                modifier = Modifier.size(17.dp),
-            )
-            WrapSafeText(
-                text = row.label,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Surface(
-                color = appearance.iconTint.copy(alpha = 0.12f),
-                shape = ShapeTokens.CornerFull,
-            ) {
-                WrapSafeText(
-                    text = row.value,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = appearance.iconTint,
-                )
-            }
-        }
-        row.detail?.takeIf { it.isNotBlank() }?.let { detail ->
-            WrapSafeText(
-                text = detail,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 27.dp),
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = if (row.detailMonospace) FontFamily.Monospace else FontFamily.Default,
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    DetectorDetailRowBlock(
+        label = row.label,
+        value = row.value,
+        status = row.status,
+        detail = row.detail,
+        detailMonospace = row.detailMonospace,
+        statusIcon = when {
+            row.label.contains("vDSO", ignoreCase = true) -> Icons.Rounded.Memory
+            row.label.contains("signal", ignoreCase = true) -> Icons.Rounded.Visibility
+            else -> appearance.icon
+        },
+    )
 }
 
 @Composable

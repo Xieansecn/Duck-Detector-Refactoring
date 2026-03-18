@@ -59,6 +59,7 @@ import com.eltavine.duckdetector.features.su.ui.card.SuDetectorCard
 import com.eltavine.duckdetector.features.systemproperties.ui.card.SystemPropertiesDetectorCard
 import com.eltavine.duckdetector.features.tee.ui.card.TeeDetectorCard
 import com.eltavine.duckdetector.features.tee.ui.model.TeeFooterActionId
+import com.eltavine.duckdetector.features.virtualization.ui.card.VirtualizationDetectorCard
 import com.eltavine.duckdetector.features.zygisk.ui.card.ZygiskDetectorCard
 import com.eltavine.duckdetector.ui.theme.ShapeTokens
 
@@ -162,6 +163,10 @@ fun DashboardScreen(
 
                     is DashboardDetectorCardEntry.SystemProperties -> {
                         SystemPropertiesDetectorCard(model = entry.model)
+                    }
+
+                    is DashboardDetectorCardEntry.Virtualization -> {
+                        VirtualizationDetectorCard(model = entry.model)
                     }
 
                     is DashboardDetectorCardEntry.Zygisk -> {

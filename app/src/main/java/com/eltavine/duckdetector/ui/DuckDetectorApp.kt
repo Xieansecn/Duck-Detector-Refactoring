@@ -82,6 +82,9 @@ import com.eltavine.duckdetector.features.tee.presentation.TeeUiStage
 import com.eltavine.duckdetector.features.tee.presentation.TeeUiState
 import com.eltavine.duckdetector.features.tee.presentation.TeeViewModel
 import com.eltavine.duckdetector.features.tee.ui.CrlNetworkConsentDialog
+import com.eltavine.duckdetector.features.virtualization.presentation.VirtualizationUiStage
+import com.eltavine.duckdetector.features.virtualization.presentation.VirtualizationUiState
+import com.eltavine.duckdetector.features.virtualization.presentation.VirtualizationViewModel
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskUiStage
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskUiState
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskViewModel
@@ -167,6 +170,7 @@ private fun AppReadyShell(
     val selinuxFactory = remember { SelinuxViewModel.factory() }
     val suFactory = remember { SuViewModel.factory() }
     val systemPropertiesFactory = remember { SystemPropertiesViewModel.factory() }
+    val virtualizationFactory = remember(context) { VirtualizationViewModel.factory(context) }
     val zygiskFactory = remember(context) { ZygiskViewModel.factory(context) }
     val bootloaderViewModel: BootloaderViewModel = viewModel(factory = bootloaderFactory)
     val teeViewModel: TeeViewModel = viewModel(factory = teeFactory)
@@ -184,6 +188,8 @@ private fun AppReadyShell(
     val suViewModel: SuViewModel = viewModel(factory = suFactory)
     val systemPropertiesViewModel: SystemPropertiesViewModel =
         viewModel(factory = systemPropertiesFactory)
+    val virtualizationViewModel: VirtualizationViewModel =
+        viewModel(factory = virtualizationFactory)
     val zygiskViewModel: ZygiskViewModel = viewModel(factory = zygiskFactory)
     val teeUiState by teeViewModel.uiState.collectAsState()
     val customRomUiState by customRomViewModel.uiState.collectAsState()
@@ -198,6 +204,7 @@ private fun AppReadyShell(
     val selinuxUiState by selinuxViewModel.uiState.collectAsState()
     val suUiState by suViewModel.uiState.collectAsState()
     val systemPropertiesUiState by systemPropertiesViewModel.uiState.collectAsState()
+    val virtualizationUiState by virtualizationViewModel.uiState.collectAsState()
     val zygiskUiState by zygiskViewModel.uiState.collectAsState()
     val bootloaderUiState by bootloaderViewModel.uiState.collectAsState()
     val contributions = remember(
@@ -215,6 +222,7 @@ private fun AppReadyShell(
         selinuxUiState,
         suUiState,
         systemPropertiesUiState,
+        virtualizationUiState,
         zygiskUiState,
     ) {
         listOf(
@@ -231,6 +239,7 @@ private fun AppReadyShell(
             buildSuContribution(suUiState),
             buildSystemPropertiesContribution(systemPropertiesUiState),
             buildTeeContribution(teeUiState),
+            buildVirtualizationContribution(virtualizationUiState),
             buildZygiskContribution(zygiskUiState),
         )
     }
@@ -271,6 +280,7 @@ private fun AppReadyShell(
         selinuxUiState,
         suUiState,
         systemPropertiesUiState,
+        virtualizationUiState,
         zygiskUiState,
     ) {
         DashboardUiState(
@@ -294,6 +304,7 @@ private fun AppReadyShell(
                     DashboardDetectorCardEntry.Su(suUiState.cardModel),
                     DashboardDetectorCardEntry.SystemProperties(systemPropertiesUiState.cardModel),
                     DashboardDetectorCardEntry.Tee(teeUiState.cardModel),
+                    DashboardDetectorCardEntry.Virtualization(virtualizationUiState.cardModel),
                     DashboardDetectorCardEntry.Zygisk(zygiskUiState.cardModel),
                 ),
             ),
@@ -557,5 +568,18 @@ private fun buildZygiskContribution(
         headline = zygiskUiState.cardModel.verdict,
         summary = zygiskUiState.cardModel.summary,
         ready = zygiskUiState.stage != ZygiskUiStage.LOADING,
+    )
+}
+
+private fun buildVirtualizationContribution(
+    virtualizationUiState: VirtualizationUiState,
+): DashboardDetectorContribution {
+    return DashboardDetectorContribution(
+        id = "virtualization",
+        title = virtualizationUiState.cardModel.title,
+        status = virtualizationUiState.cardModel.status,
+        headline = virtualizationUiState.cardModel.verdict,
+        summary = virtualizationUiState.cardModel.summary,
+        ready = virtualizationUiState.stage != VirtualizationUiStage.LOADING,
     )
 }

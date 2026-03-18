@@ -17,6 +17,7 @@ import com.eltavine.duckdetector.features.selinux.ui.model.SelinuxCardModel
 import com.eltavine.duckdetector.features.su.ui.model.SuCardModel
 import com.eltavine.duckdetector.features.systemproperties.ui.model.SystemPropertiesCardModel
 import com.eltavine.duckdetector.features.tee.ui.model.TeeCardModel
+import com.eltavine.duckdetector.features.virtualization.ui.model.VirtualizationCardModel
 import com.eltavine.duckdetector.features.zygisk.ui.model.ZygiskCardModel
 import java.util.Locale
 
@@ -150,6 +151,13 @@ sealed interface DashboardDetectorCardEntry {
         val model: ZygiskCardModel,
     ) : DashboardDetectorCardEntry {
         override val id: String = "zygisk"
+        override val status: DetectorStatus = model.status
+    }
+
+    data class Virtualization(
+        val model: VirtualizationCardModel,
+    ) : DashboardDetectorCardEntry {
+        override val id: String = "virtualization"
         override val status: DetectorStatus = model.status
     }
 }
@@ -330,6 +338,7 @@ fun sortDashboardDetectorCards(
                 is DashboardDetectorCardEntry.Su -> entry.model.title
                 is DashboardDetectorCardEntry.SystemProperties -> entry.model.title
                 is DashboardDetectorCardEntry.Tee -> entry.model.title
+                is DashboardDetectorCardEntry.Virtualization -> entry.model.title
                 is DashboardDetectorCardEntry.Zygisk -> entry.model.title
             }
         },

@@ -1,8 +1,8 @@
 package com.eltavine.duckdetector.features.dangerousapps.data.repository
 
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
+import com.eltavine.duckdetector.core.packagevisibility.InstalledPackageVisibility
+import com.eltavine.duckdetector.core.packagevisibility.InstalledPackageVisibilityChecker
 import com.eltavine.duckdetector.features.dangerousapps.domain.DangerousPackageVisibility
 
 object PackageVisibilityChecker {
@@ -11,27 +11,14 @@ object PackageVisibilityChecker {
         context: Context,
         installedPackageCount: Int,
     ): DangerousPackageVisibility {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            return DangerousPackageVisibility.FULL
-        }
-        return if (installedPackageCount > 10) {
-            DangerousPackageVisibility.FULL
-        } else {
-            DangerousPackageVisibility.RESTRICTED
+        return when (InstalledPackageVisibilityChecker.detect(context, installedPackageCount)) {
+            InstalledPackageVisibility.FULL -> DangerousPackageVisibility.FULL
+            InstalledPackageVisibility.RESTRICTED -> DangerousPackageVisibility.RESTRICTED
+            InstalledPackageVisibility.UNKNOWN -> DangerousPackageVisibility.UNKNOWN
         }
     }
 
-    @Suppress("DEPRECATION")
     fun getInstalledPackages(context: Context): Set<String> {
-        return runCatching {
-            val applications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getInstalledApplications(
-                    PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()),
-                )
-            } else {
-                context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-            }
-            applications.mapTo(linkedSetOf()) { it.packageName }
-        }.getOrDefault(emptySet())
+        return InstalledPackageVisibilityChecker.getInstalledPackages(context)
     }
 }

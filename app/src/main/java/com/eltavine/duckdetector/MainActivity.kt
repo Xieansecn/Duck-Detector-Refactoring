@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.eltavine.duckdetector.core.startup.preload.EarlyMountPreloadStore
+import com.eltavine.duckdetector.core.startup.preload.EarlyVirtualizationPreloadStore
 import com.eltavine.duckdetector.ui.DuckDetectorApp
 import com.eltavine.duckdetector.ui.theme.DuckDetectorTheme
 
@@ -14,6 +15,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EarlyMountPreloadStore.capture(intent)
+        EarlyVirtualizationPreloadStore.capture(intent)
         enableEdgeToEdge()
         setContent {
             DuckDetectorTheme {
@@ -26,5 +28,6 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         EarlyMountPreloadStore.capture(intent)
+        EarlyVirtualizationPreloadStore.capture(intent)
     }
 }

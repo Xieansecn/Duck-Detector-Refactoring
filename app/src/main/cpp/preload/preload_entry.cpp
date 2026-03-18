@@ -1,4 +1,5 @@
 #include "preload/early_detector.h"
+#include "preload/virtualization_early_detector.h"
 
 #include <android/log.h>
 #include <android/native_activity.h>
@@ -120,6 +121,47 @@ namespace {
         put_string_extra(env, intent, intentClass, "early_mnt_strings_fs", result.mntStringsFs);
     }
 
+    void attach_virtualization_preload_extras(
+            JNIEnv *env,
+            jobject intent,
+            jclass intentClass,
+            const duckdetector::preload::virtualization::EarlyVirtualizationResult &result
+    ) {
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_has_run", true);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_detected",
+                          result.detected);
+        put_string_extra(env, intent, intentClass, "early_virtualization_method",
+                         result.detectionMethod);
+        put_string_extra(env, intent, intentClass, "early_virtualization_details", result.details);
+        put_boolean_extra(
+                env,
+                intent,
+                intentClass,
+                "early_virtualization_context_valid",
+                duckdetector::preload::virtualization::is_preload_context_valid()
+        );
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_qemu_property",
+                          result.qemuPropertyDetected);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_emulator_hardware",
+                          result.emulatorHardwareDetected);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_device_node",
+                          result.deviceNodeDetected);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_avf_runtime",
+                          result.avfRuntimeDetected);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_authfs_runtime",
+                          result.authfsRuntimeDetected);
+        put_boolean_extra(env, intent, intentClass, "early_virtualization_native_bridge",
+                          result.nativeBridgeDetected);
+        put_string_extra(env, intent, intentClass, "early_virtualization_mount_namespace_inode",
+                         result.mountNamespaceInode);
+        put_string_extra(env, intent, intentClass, "early_virtualization_apex_mount_key",
+                         result.apexMountKey);
+        put_string_extra(env, intent, intentClass, "early_virtualization_system_mount_key",
+                         result.systemMountKey);
+        put_string_extra(env, intent, intentClass, "early_virtualization_vendor_mount_key",
+                         result.vendorMountKey);
+    }
+
     void start_main_activity_and_finish(JNIEnv *env, jobject activity) {
         const std::int64_t nowNs = monotonic_now_ns();
         if (g_lastHandoffNs != 0 && (nowNs - g_lastHandoffNs) < kDuplicateLaunchWindowNs) {
@@ -130,6 +172,11 @@ namespace {
         const auto *stored = duckdetector::preload::get_stored_result();
         const duckdetector::preload::EarlyMountPreloadResult emptyResult{};
         const auto &result = stored != nullptr ? *stored : emptyResult;
+        const auto *virtualizationStored = duckdetector::preload::virtualization::get_stored_result();
+        const duckdetector::preload::virtualization::EarlyVirtualizationResult emptyVirtualizationResult{};
+        const auto &virtualizationResult = virtualizationStored != nullptr
+                                           ? *virtualizationStored
+                                           : emptyVirtualizationResult;
 
         jclass activityClass = env->GetObjectClass(activity);
         if (activityClass == nullptr) {
@@ -211,6 +258,7 @@ namespace {
         );
 
         attach_preload_extras(env, intent, intentClass, result);
+        attach_virtualization_preload_extras(env, intent, intentClass, virtualizationResult);
 
         env->CallVoidMethod(activity, startActivity, intent);
         env->CallVoidMethod(activity, finish);
@@ -258,6 +306,9 @@ void native_activity_preload(JNIEnv *env, jobject activity) {
     if (!duckdetector::preload::has_early_detection_run()) {
         duckdetector::preload::run_early_detection();
     }
+    if (!duckdetector::preload::virtualization::has_early_detection_run()) {
+        duckdetector::preload::virtualization::run_early_detection();
+    }
     start_main_activity_and_finish(env, activity);
 }
 
@@ -277,6 +328,9 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *savedState, size_
 
     if (!duckdetector::preload::has_early_detection_run()) {
         duckdetector::preload::run_early_detection();
+    }
+    if (!duckdetector::preload::virtualization::has_early_detection_run()) {
+        duckdetector::preload::virtualization::run_early_detection();
     }
 
     JavaVM *vm = activity->vm;
@@ -462,4 +516,169 @@ Java_com_eltavine_duckdetector_core_startup_preload_EarlyMountPreloadBridge_nati
         jobject
 ) {
     duckdetector::preload::reset_early_detection();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeHasEarlyDetectionRun(
+        JNIEnv *,
+        jobject
+) {
+    return duckdetector::preload::virtualization::has_early_detection_run();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeIsPreloadContextValid(
+        JNIEnv *,
+        jobject
+) {
+    return duckdetector::preload::virtualization::is_preload_context_valid();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->detected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasQemuPropertyDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->qemuPropertyDetected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasEmulatorHardwareDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->emulatorHardwareDetected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasDeviceNodeDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->deviceNodeDetected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasAvfRuntimeDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->avfRuntimeDetected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasAuthfsRuntimeDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->authfsRuntimeDetected : false;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeWasNativeBridgeDetected(
+        JNIEnv *,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return result != nullptr ? result->nativeBridgeDetected : false;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetDetectionMethod(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->detectionMethod.c_str() : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetDetails(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->details.c_str() : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetMountNamespaceInode(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->mountNamespaceInode.c_str() : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetApexMountKey(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->apexMountKey.c_str() : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetSystemMountKey(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->systemMountKey.c_str() : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetVendorMountKey(
+        JNIEnv *env,
+        jobject
+) {
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    return env->NewStringUTF(result != nullptr ? result->vendorMountKey.c_str() : "");
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeGetFindings(
+        JNIEnv *env,
+        jobject
+) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    const auto *result = duckdetector::preload::virtualization::get_stored_result();
+    if (result == nullptr || result->findings.empty()) {
+        return env->NewObjectArray(0, stringClass, nullptr);
+    }
+
+    jobjectArray array = env->NewObjectArray(
+            static_cast<jsize>(result->findings.size()),
+            stringClass,
+            nullptr
+    );
+    for (std::size_t index = 0; index < result->findings.size(); ++index) {
+        jstring item = env->NewStringUTF(result->findings[index].c_str());
+        env->SetObjectArrayElement(array, static_cast<jsize>(index), item);
+        env->DeleteLocalRef(item);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_eltavine_duckdetector_core_startup_preload_EarlyVirtualizationPreloadBridge_nativeReset(
+        JNIEnv *,
+        jobject
+) {
+    duckdetector::preload::virtualization::reset_early_detection();
 }

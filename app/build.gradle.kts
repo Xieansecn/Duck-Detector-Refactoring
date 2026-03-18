@@ -75,8 +75,8 @@ android {
         applicationId = "com.eltavine.duckdetector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 202
-        versionName = "26.3.2-alpha"
+        versionCode = 203
+        versionName = "26.3.3-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
