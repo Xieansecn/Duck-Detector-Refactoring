@@ -24,25 +24,60 @@ class TeeReportReducer(
 
     fun reduce(artifacts: TeeScanArtifacts): TeeReport {
         val patchState = buildPatchState(artifacts)
-        val hardIndicators = collectHardIndicators(artifacts)
-        val softIndicators = collectSoftIndicators(artifacts, patchState)
-        val verdict = determineVerdict(artifacts, hardIndicators, softIndicators)
-        val tamperScore = ((hardIndicators.size * 28) + (softIndicators.size * 8)).coerceAtMost(100)
-        val sections = buildSections(artifacts, patchState, hardIndicators, softIndicators)
+        val policyHardIndicators = collectPolicyHardIndicators(artifacts)
+        val policySoftIndicators = collectPolicySoftIndicators(artifacts, patchState)
+        val supplementaryIndicators = collectSupplementaryIndicators(artifacts)
+        val verdict = determineVerdict(artifacts, policyHardIndicators, policySoftIndicators)
+        val supplementaryDangerCount =
+            supplementaryIndicators.count { it.level == TeeSignalLevel.FAIL }
+        val supplementaryWarningCount =
+            supplementaryIndicators.count { it.level == TeeSignalLevel.WARN }
+        val tamperScore = (
+                (policyHardIndicators.size * 28) +
+                        (policySoftIndicators.size * 8) +
+                        (supplementaryDangerCount * 10) +
+                        (supplementaryWarningCount * 4)
+                ).coerceAtMost(100)
+        val sections = buildSections(
+            artifacts = artifacts,
+            patchState = patchState,
+            policyHardIndicators = policyHardIndicators,
+            policySoftIndicators = policySoftIndicators,
+            supplementaryIndicators = supplementaryIndicators,
+        )
         val normalizedTrustRoot = normalizeTrustRoot(artifacts.trust.trustRoot)
         val report = TeeReport(
             stage = TeeScanStage.READY,
             verdict = verdict,
             tier = artifacts.snapshot.tier,
-            headline = headlineFor(verdict),
-            summary = summaryFor(verdict, artifacts, hardIndicators, softIndicators),
-            collapsedSummary = collapsedSummaryFor(verdict, hardIndicators, softIndicators),
+            headline = headlineFor(verdict, supplementaryIndicators),
+            summary = summaryFor(
+                verdict = verdict,
+                artifacts = artifacts,
+                policyHardIndicators = policyHardIndicators,
+                policySoftIndicators = policySoftIndicators,
+                supplementaryIndicators = supplementaryIndicators,
+            ),
+            collapsedSummary = collapsedSummaryFor(
+                verdict = verdict,
+                policyHardIndicators = policyHardIndicators,
+                policySoftIndicators = policySoftIndicators,
+                supplementaryIndicators = supplementaryIndicators,
+            ),
             trustRoot = normalizedTrustRoot,
             localTrustChainLevel = localTrustChainLevel(artifacts),
             trustSummary = trustSummaryFor(artifacts),
             tamperScore = tamperScore,
             evidenceCount = sections.sumOf { it.items.size },
-            signals = buildSignals(artifacts, patchState, hardIndicators, softIndicators),
+            supplementaryIndicatorCount = supplementaryIndicators.size,
+            supplementaryReviewLevel = supplementaryReviewLevel(supplementaryIndicators),
+            signals = buildSignals(
+                artifacts = artifacts,
+                patchState = patchState,
+                policyHardIndicators = policyHardIndicators,
+                policySoftIndicators = policySoftIndicators,
+                supplementaryIndicators = supplementaryIndicators,
+            ),
             sections = sections,
             certificates = artifacts.snapshot.displayCertificates,
             rkpState = artifacts.rkp,
@@ -57,22 +92,22 @@ class TeeReportReducer(
 
     private fun determineVerdict(
         artifacts: TeeScanArtifacts,
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
     ): TeeVerdict {
         val tier = artifacts.snapshot.tier
         return when {
-            hardIndicators.isNotEmpty() -> TeeVerdict.TAMPERED
+            policyHardIndicators.isNotEmpty() -> TeeVerdict.TAMPERED
             tier == TeeTier.NONE -> TeeVerdict.BROKEN
             tier == TeeTier.SOFTWARE -> TeeVerdict.BROKEN
             tier == TeeTier.UNKNOWN && artifacts.snapshot.rawCertificates.isEmpty() -> TeeVerdict.BROKEN
-            softIndicators.isNotEmpty() -> TeeVerdict.SUSPICIOUS
+            policySoftIndicators.isNotEmpty() -> TeeVerdict.SUSPICIOUS
             tier == TeeTier.TEE || tier == TeeTier.STRONGBOX -> TeeVerdict.CONSISTENT
             else -> TeeVerdict.INCONCLUSIVE
         }
     }
 
-    private fun collectHardIndicators(artifacts: TeeScanArtifacts): List<TeeEvidenceItem> {
+    private fun collectPolicyHardIndicators(artifacts: TeeScanArtifacts): List<TeeEvidenceItem> {
         return buildList {
             if (!artifacts.trust.chainSignatureValid) {
                 add(
@@ -128,15 +163,20 @@ class TeeReportReducer(
                     )
                 )
             }
-            if (artifacts.bootConsistency.verifiedStateUnlockedMismatch) {
+            if (artifacts.crl.revokedCertificates.isNotEmpty()) {
                 add(
                     fact(
-                        "Verified boot state",
-                        "Attestation reported Verified while deviceLocked=false.",
+                        "Revocation",
+                        "Official revocation feed matched certificate serials from the chain.",
                         TeeSignalLevel.FAIL
                     )
                 )
             }
+        }
+    }
+
+    private fun collectSupplementaryIndicators(artifacts: TeeScanArtifacts): List<TeeEvidenceItem> {
+        return buildList {
             if (artifacts.keystore2Hook.javaHookDetected) {
                 add(
                     fact(
@@ -191,15 +231,6 @@ class TeeReportReducer(
                     )
                 )
             }
-            if (artifacts.crl.revokedCertificates.isNotEmpty()) {
-                add(
-                    fact(
-                        "Revocation",
-                        "Official revocation feed matched certificate serials from the chain.",
-                        TeeSignalLevel.FAIL
-                    )
-                )
-            }
             if (artifacts.native.leafDerPrimaryDetected) {
                 add(
                     fact(
@@ -246,7 +277,7 @@ class TeeReportReducer(
                 )
             }
             artifacts.strongBox.hardFailures.forEach { message ->
-                add(fact("StrongBox", message, TeeSignalLevel.FAIL))
+                add(fact("StrongBox", message, TeeSignalLevel.WARN))
             }
             if (artifacts.soter.damaged) {
                 add(fact("Soter", artifacts.soter.summary, TeeSignalLevel.FAIL))
@@ -254,7 +285,7 @@ class TeeReportReducer(
         }
     }
 
-    private fun collectSoftIndicators(
+    private fun collectPolicySoftIndicators(
         artifacts: TeeScanArtifacts,
         patchState: TeePatchState,
     ): List<TeeEvidenceItem> {
@@ -262,44 +293,17 @@ class TeeReportReducer(
             artifacts.snapshot.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
                 add(fact("Collector", message, TeeSignalLevel.WARN))
             }
-            if (artifacts.chainStructure.chainLengthAnomaly) {
-                add(
-                    fact(
-                        "Chain length",
-                        "Local chain length is outside the common attestation range.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
             artifacts.chainStructure.issuerMismatches.forEach { mismatch ->
                 add(fact("Issuer path", mismatch, TeeSignalLevel.WARN))
             }
             artifacts.chainStructure.expiredCertificates.forEach { expired ->
                 add(fact("Certificate validity", expired, TeeSignalLevel.WARN))
             }
-            if (artifacts.chainStructure.hasMultipleAttestationExtensions) {
-                add(
-                    fact(
-                        "Extension rule",
-                        "Multiple attestation extensions were present; the one nearest the root was used.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
             if (artifacts.chainStructure.provisioningConsistencyIssue) {
                 add(
                     fact(
                         "Provisioning layout",
                         "Provisioning info was not adjacent to the trusted attestation certificate.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.dualAlgorithm.mismatchDetected) {
-                add(
-                    fact(
-                        "Dual algorithm",
-                        "RSA and EC attestation chains disagreed on issuer, root, or length.",
                         TeeSignalLevel.WARN
                     )
                 )
@@ -313,65 +317,8 @@ class TeeReportReducer(
                     )
                 )
             }
-            if (artifacts.pruning.suspicious) {
-                add(
-                    fact(
-                        "Pruning",
-                        "Signer slot pruning did not trigger under saturation.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.timing.suspicious) {
-                add(
-                    fact(
-                        "Timing",
-                        "Signing completed unusually fast with very low variance.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.idAttestation.mismatches.isNotEmpty()) {
-                add(
-                    fact(
-                        "ID attestation",
-                        "Comparable attested identifiers disagreed with runtime build fields.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.native.leafDerSecondaryDetected) {
-                add(
-                    fact(
-                        "TS leaf DER",
-                        "Secondary DER anomalies were present in the leaf certificate.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.native.tracingDetected) {
-                add(
-                    fact(
-                        "Tracing",
-                        "The app process appears to be under ptrace-style observation.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
-            if (artifacts.native.suspiciousMappings.isNotEmpty()) {
-                add(
-                    fact(
-                        "Mappings",
-                        "Suspicious keystore-related process mappings were present.",
-                        TeeSignalLevel.WARN
-                    )
-                )
-            }
             artifacts.rkp.consistencyIssue?.let { issue ->
                 add(fact("RKP consistency", issue, TeeSignalLevel.WARN))
-            }
-            artifacts.strongBox.warnings.forEach { message ->
-                add(fact("StrongBox", message, TeeSignalLevel.WARN))
             }
         }
     }
@@ -379,8 +326,9 @@ class TeeReportReducer(
     private fun buildSignals(
         artifacts: TeeScanArtifacts,
         patchState: TeePatchState,
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
     ): List<TeeSignal> {
         return buildList {
             add(
@@ -395,8 +343,16 @@ class TeeReportReducer(
             add(
                 TeeSignal(
                     "Signals",
-                    "${hardIndicators.size} hard • ${softIndicators.size} soft",
-                    indicatorLevel(hardIndicators, softIndicators),
+                    indicatorValue(
+                        policyHardIndicators = policyHardIndicators,
+                        policySoftIndicators = policySoftIndicators,
+                        supplementaryIndicators = supplementaryIndicators,
+                    ),
+                    indicatorLevel(
+                        policyHardIndicators = policyHardIndicators,
+                        policySoftIndicators = policySoftIndicators,
+                        supplementaryIndicators = supplementaryIndicators,
+                    ),
                 ),
             )
             if (artifacts.native.trickyStoreDetected || artifacts.native.leafDerPrimaryDetected || artifacts.native.leafDerSecondaryDetected) {
@@ -417,8 +373,9 @@ class TeeReportReducer(
     private fun buildSections(
         artifacts: TeeScanArtifacts,
         patchState: TeePatchState,
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
     ): List<TeeEvidenceSection> {
         return listOf(
             TeeEvidenceSection(
@@ -518,8 +475,16 @@ class TeeReportReducer(
                     add(
                         fact(
                             "Indicators",
-                            indicatorValue(hardIndicators, softIndicators),
-                            indicatorLevel(hardIndicators, softIndicators)
+                            indicatorValue(
+                                policyHardIndicators = policyHardIndicators,
+                                policySoftIndicators = policySoftIndicators,
+                                supplementaryIndicators = supplementaryIndicators,
+                            ),
+                            indicatorLevel(
+                                policyHardIndicators = policyHardIndicators,
+                                policySoftIndicators = policySoftIndicators,
+                                supplementaryIndicators = supplementaryIndicators,
+                            ),
                         )
                     )
                     add(
@@ -577,7 +542,7 @@ class TeeReportReducer(
                         fact(
                             "Dual algorithm",
                             dualAlgorithmValue(artifacts),
-                            if (artifacts.dualAlgorithm.mismatchDetected) TeeSignalLevel.WARN else TeeSignalLevel.PASS
+                            TeeSignalLevel.INFO
                         )
                     )
                     add(
@@ -623,10 +588,18 @@ class TeeReportReducer(
         )
     }
 
-    private fun headlineFor(verdict: TeeVerdict): String = when (verdict) {
-        TeeVerdict.CONSISTENT -> "Local TEE verification is internally consistent"
-        TeeVerdict.TAMPERED -> "Local anomaly indicators were detected"
-        TeeVerdict.SUSPICIOUS -> "Local evidence needs review"
+    private fun headlineFor(
+        verdict: TeeVerdict,
+        supplementaryIndicators: List<TeeEvidenceItem>,
+    ): String = when (verdict) {
+        TeeVerdict.CONSISTENT -> if (supplementaryIndicators.isNotEmpty()) {
+            "Attestation aligned; local probes need review"
+        } else {
+            "Local TEE attestation checks aligned"
+        }
+
+        TeeVerdict.TAMPERED -> "Policy-backed attestation anomalies were detected"
+        TeeVerdict.SUSPICIOUS -> "Policy-backed attestation evidence needs review"
         TeeVerdict.BROKEN -> "Hardware-backed local verification was not established"
         TeeVerdict.INCONCLUSIVE -> "Local verification stayed inconclusive"
         TeeVerdict.LOADING -> "TEE"
@@ -635,15 +608,19 @@ class TeeReportReducer(
     private fun summaryFor(
         verdict: TeeVerdict,
         artifacts: TeeScanArtifacts,
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
     ): String = when (verdict) {
-        TeeVerdict.CONSISTENT -> "Attestation, trust path, and local behavior checks line up."
-        TeeVerdict.TAMPERED -> hardIndicators.firstOrNull()?.body
+        TeeVerdict.CONSISTENT -> supplementaryIndicators.firstOrNull()?.let { item ->
+            "${item.body} Attestation and trust-path checks still aligned."
+        } ?: "Attestation, trust path, and revocation checks line up."
+
+        TeeVerdict.TAMPERED -> policyHardIndicators.firstOrNull()?.body
             ?: "Multiple hard anomaly indicators were raised."
 
-        TeeVerdict.SUSPICIOUS -> softIndicators.firstOrNull()?.body
-            ?: "Soft anomaly indicators suggest further review."
+        TeeVerdict.SUSPICIOUS -> policySoftIndicators.firstOrNull()?.body
+            ?: "Policy-backed review signals suggest further review."
 
         TeeVerdict.BROKEN -> artifacts.snapshot.errorMessage
             ?: "Local verification could not establish hardware-backed trust."
@@ -654,12 +631,18 @@ class TeeReportReducer(
 
     private fun collapsedSummaryFor(
         verdict: TeeVerdict,
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
     ): String = when (verdict) {
-        TeeVerdict.CONSISTENT -> "Checks aligned"
-        TeeVerdict.TAMPERED -> "${hardIndicators.size} hard anomaly"
-        TeeVerdict.SUSPICIOUS -> "${softIndicators.size} soft anomaly"
+        TeeVerdict.CONSISTENT -> if (supplementaryIndicators.isNotEmpty()) {
+            "Aligned • local review"
+        } else {
+            "Checks aligned"
+        }
+
+        TeeVerdict.TAMPERED -> "${policyHardIndicators.size} policy anomaly"
+        TeeVerdict.SUSPICIOUS -> "${policySoftIndicators.size} policy review"
         TeeVerdict.BROKEN -> "No hardware trust"
         TeeVerdict.INCONCLUSIVE -> "Mixed signals"
         TeeVerdict.LOADING -> "Scanning"
@@ -950,7 +933,7 @@ class TeeReportReducer(
 
     private fun dualAlgorithmValue(artifacts: TeeScanArtifacts): String {
         return if (artifacts.dualAlgorithm.mismatchDetected) {
-            "RSA/EC chain mismatch"
+            "RSA/EC chain difference observed"
         } else {
             "RSA/EC chains aligned"
         }
@@ -1007,7 +990,7 @@ class TeeReportReducer(
             result.hasHardAnomaly -> "Mismatch • ${result.detail}"
             root == null -> "Unavailable • ${result.detail}"
             !result.runtimePropsAvailable -> "Unavailable • ${result.detail}"
-            !root.verifiedBootHashHex.isNullOrBlank() && result.runtimeVbmetaDigest != null ->
+            result.runtimeComparisonPerformed ->
                 "Matched • ${result.detail}"
 
             else -> "State only • ${result.detail}"
@@ -1041,8 +1024,6 @@ class TeeReportReducer(
     }
 
     private fun chainLayoutLevel(artifacts: TeeScanArtifacts): TeeSignalLevel = when {
-        artifacts.chainStructure.chainLengthAnomaly -> TeeSignalLevel.WARN
-        artifacts.chainStructure.hasMultipleAttestationExtensions -> TeeSignalLevel.WARN
         artifacts.chainStructure.provisioningConsistencyIssue -> TeeSignalLevel.WARN
         else -> TeeSignalLevel.INFO
     }
@@ -1064,7 +1045,7 @@ class TeeReportReducer(
             artifacts.bootConsistency.hasHardAnomaly -> "Mismatch"
             root == null -> "Unavailable"
             !artifacts.bootConsistency.runtimePropsAvailable -> "Unavailable"
-            !root.verifiedBootHashHex.isNullOrBlank() && artifacts.bootConsistency.runtimeVbmetaDigest != null -> "Matched"
+            artifacts.bootConsistency.runtimeComparisonPerformed -> "Matched"
             else -> "State only"
         }
     }
@@ -1075,7 +1056,7 @@ class TeeReportReducer(
             artifacts.bootConsistency.hasHardAnomaly -> TeeSignalLevel.FAIL
             root == null -> TeeSignalLevel.INFO
             !artifacts.bootConsistency.runtimePropsAvailable -> TeeSignalLevel.INFO
-            !root.verifiedBootHashHex.isNullOrBlank() && artifacts.bootConsistency.runtimeVbmetaDigest != null -> TeeSignalLevel.PASS
+            artifacts.bootConsistency.runtimeComparisonPerformed -> TeeSignalLevel.PASS
             else -> TeeSignalLevel.INFO
         }
     }
@@ -1139,8 +1120,8 @@ class TeeReportReducer(
     }
 
     private fun strongBoxLevel(artifacts: TeeScanArtifacts): TeeSignalLevel = when {
-        artifacts.strongBox.hardFailures.isNotEmpty() -> TeeSignalLevel.FAIL
-        artifacts.strongBox.warnings.isNotEmpty() -> TeeSignalLevel.WARN
+        artifacts.strongBox.hardFailures.isNotEmpty() -> TeeSignalLevel.WARN
+        artifacts.strongBox.warnings.isNotEmpty() -> TeeSignalLevel.INFO
         artifacts.strongBox.available -> TeeSignalLevel.PASS
         else -> TeeSignalLevel.INFO
     }
@@ -1160,11 +1141,12 @@ class TeeReportReducer(
     }
 
     private fun indicatorLevel(
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
     ): TeeSignalLevel = when {
-        hardIndicators.isNotEmpty() -> TeeSignalLevel.FAIL
-        softIndicators.isNotEmpty() -> TeeSignalLevel.WARN
+        policyHardIndicators.isNotEmpty() -> TeeSignalLevel.FAIL
+        policySoftIndicators.isNotEmpty() || supplementaryIndicators.isNotEmpty() -> TeeSignalLevel.WARN
         else -> TeeSignalLevel.PASS
     }
 
@@ -1176,9 +1158,21 @@ class TeeReportReducer(
     }
 
     private fun indicatorValue(
-        hardIndicators: List<TeeEvidenceItem>,
-        softIndicators: List<TeeEvidenceItem>,
-    ): String = "${hardIndicators.size} hard • ${softIndicators.size} soft"
+        policyHardIndicators: List<TeeEvidenceItem>,
+        policySoftIndicators: List<TeeEvidenceItem>,
+        supplementaryIndicators: List<TeeEvidenceItem>,
+    ): String {
+        return "${policyHardIndicators.size} policy hard • " +
+                "${policySoftIndicators.size} policy review • " +
+                "${supplementaryIndicators.size} local"
+    }
+
+    private fun supplementaryReviewLevel(indicators: List<TeeEvidenceItem>): TeeSignalLevel = when {
+        indicators.any { it.level == TeeSignalLevel.FAIL || it.level == TeeSignalLevel.WARN } ->
+            TeeSignalLevel.WARN
+
+        else -> TeeSignalLevel.INFO
+    }
 
     private fun syscallMismatchExplanation(): String {
         return "Possible cause: vendor binder/libc compatibility differences. No stronger hook fingerprint was found."

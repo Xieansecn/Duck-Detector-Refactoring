@@ -12,6 +12,8 @@ data class TeeReport(
     val trustSummary: String,
     val tamperScore: Int,
     val evidenceCount: Int,
+    val supplementaryIndicatorCount: Int = 0,
+    val supplementaryReviewLevel: TeeSignalLevel = TeeSignalLevel.INFO,
     val signals: List<TeeSignal>,
     val sections: List<TeeEvidenceSection>,
     val certificates: List<TeeCertificateItem>,

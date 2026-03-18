@@ -112,7 +112,11 @@ class TeeCardModelMapper {
 
     private fun verdictValue(report: TeeReport): String = when (report.verdict) {
         TeeVerdict.LOADING -> "Scanning"
-        TeeVerdict.CONSISTENT -> "Aligned"
+        TeeVerdict.CONSISTENT -> if (report.supplementaryIndicatorCount > 0) {
+            "Aligned + review"
+        } else {
+            "Aligned"
+        }
         TeeVerdict.SUSPICIOUS -> "Review"
         TeeVerdict.TAMPERED -> "Tampered"
         TeeVerdict.BROKEN -> "Broken"
@@ -173,7 +177,11 @@ class TeeCardModelMapper {
 
     private fun TeeReport.toDetectorStatus(): DetectorStatus = when (verdict) {
         TeeVerdict.LOADING -> DetectorStatus.info(InfoKind.SUPPORT)
-        TeeVerdict.CONSISTENT -> DetectorStatus.allClear()
+        TeeVerdict.CONSISTENT -> if (supplementaryIndicatorCount > 0) {
+            DetectorStatus.warning()
+        } else {
+            DetectorStatus.allClear()
+        }
         TeeVerdict.SUSPICIOUS -> DetectorStatus.warning()
         TeeVerdict.TAMPERED, TeeVerdict.BROKEN -> DetectorStatus.danger()
         TeeVerdict.INCONCLUSIVE -> DetectorStatus.info(InfoKind.ERROR)

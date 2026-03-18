@@ -55,7 +55,7 @@ class BootConsistencyProbeTest {
     }
 
     @Test
-    fun `verified plus unlocked becomes anomaly`() {
+    fun `verified plus unlocked stays non-anomalous for approved test-device semantics`() {
         val probe = BootConsistencyProbe(
             propertyReader = SystemPropertyReader {
                 PropertyReadResult(available = true, value = "aabb")
@@ -73,11 +73,13 @@ class BootConsistencyProbeTest {
             ),
         )
 
-        assertTrue(result.verifiedStateUnlockedMismatch)
+        assertFalse(result.verifiedStateUnlockedMismatch)
+        assertFalse(result.hasHardAnomaly)
+        assertTrue(result.detail.contains("approved test devices", ignoreCase = true))
     }
 
     @Test
-    fun `all zero key and hash become anomalies`() {
+    fun `verified state still treats zero key and hash as anomalies`() {
         val probe = BootConsistencyProbe(
             propertyReader = SystemPropertyReader {
                 PropertyReadResult(available = true, value = "00")
@@ -97,6 +99,58 @@ class BootConsistencyProbeTest {
 
         assertTrue(result.verifiedBootKeyAllZeros)
         assertTrue(result.verifiedBootHashAllZeros)
+    }
+
+    @Test
+    fun `unverified state allows all-zero verified boot key and skips runtime compare`() {
+        val probe = BootConsistencyProbe(
+            propertyReader = SystemPropertyReader {
+                PropertyReadResult(available = true, value = "aabb")
+            },
+        )
+
+        val result = probe.inspect(
+            snapshot(
+                rootOfTrust = RootOfTrustSnapshot(
+                    verifiedBootKeyHex = "00:00",
+                    deviceLocked = false,
+                    verifiedBootState = "Unverified",
+                    verifiedBootHashHex = "aabb",
+                ),
+            ),
+        )
+
+        assertFalse(result.verifiedBootKeyAllZeros)
+        assertFalse(result.vbmetaDigestMismatch)
+        assertFalse(result.runtimeComparisonPerformed)
+        assertFalse(result.hasHardAnomaly)
+        assertTrue(result.detail.contains("all-zero verifiedBootKey", ignoreCase = true))
+    }
+
+    @Test
+    fun `failed state skips root-of-trust anomaly claims`() {
+        val probe = BootConsistencyProbe(
+            propertyReader = SystemPropertyReader {
+                PropertyReadResult(available = true, value = "ffff")
+            },
+        )
+
+        val result = probe.inspect(
+            snapshot(
+                rootOfTrust = RootOfTrustSnapshot(
+                    verifiedBootKeyHex = "00:00",
+                    deviceLocked = true,
+                    verifiedBootState = "Failed",
+                    verifiedBootHashHex = "0000",
+                ),
+            ),
+        )
+
+        assertFalse(result.verifiedBootKeyAllZeros)
+        assertFalse(result.verifiedBootHashAllZeros)
+        assertFalse(result.vbmetaDigestMismatch)
+        assertFalse(result.hasHardAnomaly)
+        assertTrue(result.detail.contains("does not guarantee", ignoreCase = true))
     }
 
     private fun rootOfTrust(hash: String): RootOfTrustSnapshot {

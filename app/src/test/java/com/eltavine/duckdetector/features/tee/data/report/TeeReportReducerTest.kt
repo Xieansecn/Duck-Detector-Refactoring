@@ -41,7 +41,7 @@ class TeeReportReducerTest {
     private val reducer = TeeReportReducer()
 
     @Test
-    fun `java hook becomes tampered verdict`() {
+    fun `java hook becomes supplementary review without changing attestation verdict`() {
         val report = reducer.reduce(
             baseArtifacts(
                 keystore2Hook = Keystore2HookResult(
@@ -52,7 +52,8 @@ class TeeReportReducerTest {
             ),
         )
 
-        assertEquals(TeeVerdict.TAMPERED, report.verdict)
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertEquals(1, report.supplementaryIndicatorCount)
         assertTrue(report.summary.contains("Java-hook", ignoreCase = true))
         assertTrue(report.sections.single { it.title == "Checks" }.items.any {
             it.title == "Keystore2" && it.body.contains(
@@ -62,22 +63,23 @@ class TeeReportReducerTest {
     }
 
     @Test
-    fun `soft extension anomaly becomes suspicious verdict`() {
+    fun `provisioning layout anomaly becomes suspicious verdict`() {
         val report = reducer.reduce(
             baseArtifacts(
                 chainStructure = ChainStructureResult(
                     chainLength = 4,
-                    attestationExtensionCount = 2,
+                    attestationExtensionCount = 1,
                     trustedAttestationIndex = 2,
-                    hasMultipleAttestationExtensions = true,
-                    detail = "multi",
+                    provisioningIndex = 0,
+                    provisioningConsistencyIssue = true,
+                    detail = "provisioning",
                 ),
             ),
         )
 
         assertEquals(TeeVerdict.SUSPICIOUS, report.verdict)
         assertTrue(report.sections.single { it.title == "Trust" }.items.any { it.title == "Chain layout" })
-        assertTrue(report.summary.contains("nearest the root", ignoreCase = true))
+        assertTrue(report.summary.contains("adjacent", ignoreCase = true))
     }
 
     @Test
@@ -101,19 +103,20 @@ class TeeReportReducerTest {
     }
 
     @Test
-    fun `verified state unlocked mismatch becomes tampered verdict`() {
+    fun `verified state unlocked mismatch no longer creates a hard anomaly`() {
         val report = reducer.reduce(
             baseArtifacts(
                 bootConsistency = BootConsistencyResult(
-                    verifiedStateUnlockedMismatch = true,
                     runtimePropsAvailable = true,
-                    detail = "Attestation reported Verified while deviceLocked=false.",
+                    detail = "Attestation reported Verified while deviceLocked=false; AOSP allows this on approved test devices, so no anomaly was raised.",
                 ),
             ),
         )
 
-        assertEquals(TeeVerdict.TAMPERED, report.verdict)
-        assertTrue(report.summary.contains("deviceLocked=false"))
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Attestation" }.items.any {
+            it.title == "Boot consistency" && it.body.contains("State only")
+        })
     }
 
     @Test
@@ -133,7 +136,7 @@ class TeeReportReducerTest {
     }
 
     @Test
-    fun `native got hook becomes tampered verdict`() {
+    fun `native got hook becomes supplementary review without changing attestation verdict`() {
         val report = reducer.reduce(
             baseArtifacts(
                 native = NativeTeeSnapshot(
@@ -145,7 +148,8 @@ class TeeReportReducerTest {
             ),
         )
 
-        assertEquals(TeeVerdict.TAMPERED, report.verdict)
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertEquals(2, report.supplementaryIndicatorCount)
         assertTrue(report.summary.contains("GOT", ignoreCase = true))
         assertTrue(report.sections.single { it.title == "Checks" }.items.any {
             it.title == "Native" && it.body.contains("GOT hook")
@@ -166,7 +170,7 @@ class TeeReportReducerTest {
 
         assertEquals(TeeVerdict.CONSISTENT, report.verdict)
         assertTrue(report.sections.single { it.title == "Checks" }.items.any {
-            it.title == "Indicators" && it.body == "0 hard • 0 soft"
+            it.title == "Indicators" && it.body == "0 policy hard • 0 policy review • 0 local"
         })
         assertTrue(report.sections.single { it.title == "Checks" }.items.any {
             it.title == "Native" &&
@@ -220,6 +224,50 @@ class TeeReportReducerTest {
         assertTrue(report.summary.contains("256B"))
         assertTrue(report.sections.single { it.title == "Checks" }.items.any {
             it.title == "Oversized challenge" && it.body.contains("256B") && it.body.contains("4096B")
+        })
+    }
+
+    @Test
+    fun `dual algorithm difference no longer drives verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                dualAlgorithm = DualAlgorithmChainResult(
+                    mismatchDetected = true,
+                    detail = "rsa/ec differ",
+                    trustRootMismatch = true,
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertEquals(0, report.supplementaryIndicatorCount)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Dual algorithm" &&
+                    it.body.contains("difference observed") &&
+                    it.level == TeeSignalLevel.INFO
+        })
+    }
+
+    @Test
+    fun `strongbox heuristic warning stays informational`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                strongBox = StrongBoxBehaviorResult(
+                    requested = true,
+                    advertised = true,
+                    available = true,
+                    warnings = listOf("StrongBox accepted RSA-4096, which is atypical for current hardware-backed implementations."),
+                    detail = "note",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertEquals(0, report.supplementaryIndicatorCount)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "StrongBox" &&
+                    it.body.contains("RSA-4096") &&
+                    it.level == TeeSignalLevel.INFO
         })
     }
 
@@ -333,6 +381,16 @@ class TeeReportReducerTest {
         native: NativeTeeSnapshot = NativeTeeSnapshot(
             trickyStoreDetails = "clean",
         ),
+        dualAlgorithm: DualAlgorithmChainResult = DualAlgorithmChainResult(
+            mismatchDetected = false,
+            detail = "ok",
+        ),
+        strongBox: StrongBoxBehaviorResult = StrongBoxBehaviorResult(
+            requested = false,
+            advertised = false,
+            available = false,
+            detail = "skipped",
+        ),
         bootConsistency: BootConsistencyResult = BootConsistencyResult(
             runtimePropsAvailable = true,
             runtimeVbmetaDigest = "12345678",
@@ -429,17 +487,9 @@ class TeeReportReducerTest {
                 invalidatedOperations = 2,
                 detail = "ok",
             ),
-            dualAlgorithm = DualAlgorithmChainResult(
-                mismatchDetected = false,
-                detail = "ok",
-            ),
+            dualAlgorithm = dualAlgorithm,
             idAttestation = idAttestation,
-            strongBox = StrongBoxBehaviorResult(
-                requested = false,
-                advertised = false,
-                available = false,
-                detail = "skipped",
-            ),
+            strongBox = strongBox,
             native = native,
             soter = TeeSoterState(),
             bootConsistency = bootConsistency,

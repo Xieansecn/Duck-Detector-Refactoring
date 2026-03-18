@@ -149,6 +149,54 @@ class TeeCardModelMapperTest {
     }
 
     @Test
+    fun `supplementary local review keeps aligned verdict text but warns card status`() {
+        val model = mapper.map(
+            report = TeeReport(
+                stage = TeeScanStage.READY,
+                verdict = TeeVerdict.CONSISTENT,
+                tier = TeeTier.TEE,
+                headline = "Attestation aligned; local probes need review",
+                summary = "Binder reply fingerprint matched a Java-hook style path. Attestation and trust-path checks still aligned.",
+                collapsedSummary = "Aligned • local review",
+                trustRoot = TeeTrustRoot.GOOGLE,
+                trustSummary = "Local trust path",
+                tamperScore = 10,
+                evidenceCount = 1,
+                supplementaryIndicatorCount = 1,
+                supplementaryReviewLevel = TeeSignalLevel.WARN,
+                signals = listOf(
+                    TeeSignal(
+                        "Signals",
+                        "0 policy hard • 0 policy review • 1 local",
+                        TeeSignalLevel.WARN
+                    ),
+                ),
+                sections = listOf(
+                    TeeEvidenceSection(
+                        title = "Checks",
+                        items = listOf(
+                            TeeEvidenceItem(
+                                "Keystore2",
+                                "Binder reply fingerprint matched a Java-hook style path.",
+                                TeeSignalLevel.FAIL
+                            ),
+                        ),
+                    ),
+                ),
+                certificates = emptyList(),
+                networkState = TeeNetworkState(
+                    mode = TeeNetworkMode.INACTIVE,
+                    summary = "Offline-only verification",
+                ),
+            ),
+            isExpanded = false,
+        )
+
+        assertEquals(DetectorStatus.warning(), model.status)
+        assertEquals("Aligned + review", model.headerFacts.first { it.label == "Verdict" }.value)
+    }
+
+    @Test
     fun `rkp badge is hidden when local trust chain needs review`() {
         val model = mapper.map(
             report = TeeReport(
