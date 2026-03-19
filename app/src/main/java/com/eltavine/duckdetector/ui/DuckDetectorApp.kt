@@ -98,11 +98,13 @@ import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskUiStage
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskUiState
 import com.eltavine.duckdetector.features.zygisk.presentation.ZygiskViewModel
 import com.eltavine.duckdetector.ui.shell.AppDestination
+import com.eltavine.duckdetector.ui.shell.DetectorResultNoticeDialog
 import com.eltavine.duckdetector.ui.shell.FloatingAppTabSwitcher
 import com.eltavine.duckdetector.ui.shell.LiveUpdateConsentDialog
 import com.eltavine.duckdetector.ui.shell.NotificationPermissionConsentDialog
 import com.eltavine.duckdetector.ui.shell.StartupGateState
 import com.eltavine.duckdetector.ui.shell.resolveStartupGateState
+import com.eltavine.duckdetector.ui.shell.shouldShowDetectorResultNotice
 import com.eltavine.duckdetector.ui.shell.shouldCreateDetectorViewModels
 import kotlinx.coroutines.launch
 
@@ -431,6 +433,36 @@ private fun AppReadyShell(
     val settingsState = remember(networkPrefs.consentGranted) {
         SettingsUiState(isCrlNetworkingEnabled = networkPrefs.consentGranted)
     }
+    val detectorResultNoticeKey = remember(
+        isDashboardLoading,
+        dashboardState.overview.headline,
+        dashboardState.overview.summary,
+        dashboardState.overview.metrics,
+    ) {
+        if (!shouldShowDetectorResultNotice(isDashboardLoading, dashboardState.overview.headline)) {
+            null
+        } else {
+            buildString {
+                append(dashboardState.overview.headline)
+                append('|')
+                append(dashboardState.overview.summary)
+                dashboardState.overview.metrics.forEach { metric ->
+                    append('|')
+                    append(metric.label)
+                    append('=')
+                    append(metric.value)
+                }
+            }
+        }
+    }
+    var dismissedDetectorResultNoticeKey by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(detectorResultNoticeKey) {
+        if (detectorResultNoticeKey == null) {
+            dismissedDetectorResultNoticeKey = null
+        }
+    }
+
     val notificationSnapshot = remember(
         contributions.size,
         contributions.count { it.ready },
@@ -487,6 +519,17 @@ private fun AppReadyShell(
                 .align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 28.dp),
         )
+
+        if (
+            detectorResultNoticeKey != null &&
+            detectorResultNoticeKey != dismissedDetectorResultNoticeKey
+        ) {
+            DetectorResultNoticeDialog(
+                onDismiss = {
+                    dismissedDetectorResultNoticeKey = detectorResultNoticeKey
+                },
+            )
+        }
     }
 }
 
