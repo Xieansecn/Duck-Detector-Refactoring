@@ -2,9 +2,12 @@ package com.eltavine.duckdetector.features.tee.data.verification.certificate
 
 import android.content.Context
 import com.eltavine.duckdetector.R
+import org.json.JSONArray
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.nio.charset.StandardCharsets
 
 class GoogleAttestationRootStore(
     context: Context,
@@ -14,12 +17,14 @@ class GoogleAttestationRootStore(
     private val certificateFactory = CertificateFactory.getInstance("X.509")
 
     val certificates: List<X509Certificate> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        listOf(
-            R.raw.google_attestation_root_rsa,
-            R.raw.google_attestation_root_ecdsa,
-        ).map { resId ->
-            appContext.resources.openRawResource(resId).use { stream ->
-                certificateFactory.generateCertificate(stream) as X509Certificate
+        val payload = appContext.resources.openRawResource(R.raw.google_attestation_roots)
+            .use { stream ->
+                stream.reader(StandardCharsets.UTF_8).readText()
+            }
+        val roots = JSONArray(payload)
+        buildList(roots.length()) {
+            for (index in 0 until roots.length()) {
+                add(parseCertificate(roots.getString(index)))
             }
         }
     }
@@ -37,6 +42,12 @@ class GoogleAttestationRootStore(
         }
         return certificates.any { root ->
             root.encoded.contentEquals(cert.encoded)
+        }
+    }
+
+    private fun parseCertificate(pem: String): X509Certificate {
+        return ByteArrayInputStream(pem.toByteArray(StandardCharsets.UTF_8)).use { stream ->
+            certificateFactory.generateCertificate(stream) as X509Certificate
         }
     }
 
