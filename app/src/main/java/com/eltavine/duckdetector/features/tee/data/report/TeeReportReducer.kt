@@ -200,6 +200,62 @@ class TeeReportReducer(
                     )
                 )
             }
+            if (artifacts.legacyKeystorePath.executed &&
+                artifacts.legacyKeystorePath.legacyMaterialAvailable &&
+                !artifacts.legacyKeystorePath.chainMatches
+            ) {
+                add(
+                    fact(
+                        "Legacy keystore",
+                        "Legacy USRCERT_/CACERT_ path diverged from the Java KeyStore certificate chain.",
+                        TeeSignalLevel.WARN
+                    )
+                )
+            }
+            if (artifacts.listEntriesConsistency.executed &&
+                (artifacts.listEntriesConsistency.inconsistent || artifacts.listEntriesConsistency.badParcelableLikeCrash)
+            ) {
+                add(
+                    fact(
+                        "listEntries",
+                        "containsAlias()/aliases() diverged or crashed with a BadParcelable-style path.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.listEntriesBatched.executed &&
+                (artifacts.listEntriesBatched.cursorEchoed || artifacts.listEntriesBatched.expectedNextMissing)
+            ) {
+                add(
+                    fact(
+                        "listEntriesBatched",
+                        "Keystore2 listEntriesBatched(startPastAlias) diverged from expected cursor semantics.",
+                        if (artifacts.listEntriesBatched.cursorEchoed) TeeSignalLevel.FAIL else TeeSignalLevel.WARN
+                    )
+                )
+            }
+            if (artifacts.keyMetadataSemantics.executed &&
+                (!artifacts.keyMetadataSemantics.usesKeyIdDomain || !artifacts.keyMetadataSemantics.aliasCleared)
+            ) {
+                add(
+                    fact(
+                        "Key metadata",
+                        "Keystore2 metadata.key did not normalize to KEY_ID semantics.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.keyMetadataShape.executed &&
+                (!artifacts.keyMetadataShape.modificationTimeValid || !artifacts.keyMetadataShape.hasOriginTag)
+            ) {
+                add(
+                    fact(
+                        "Key metadata",
+                        "Keystore2 metadata omitted expected modification time or ORIGIN authorization tags.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
             if (artifacts.keyboxImport.executed && !artifacts.keyboxImport.markerPreserved) {
                 add(
                     fact(
@@ -250,6 +306,92 @@ class TeeReportReducer(
                     fact(
                         "Pure certificate",
                         "getKey() returned a key object for a certificate-only entry.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.pureCertificateSecurityLevel.executed &&
+                artifacts.pureCertificateSecurityLevel.securityLevelPresent
+            ) {
+                add(
+                    fact(
+                        "Pure certificate",
+                        "Certificate-only entry exposed Keystore2 security-level metadata.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.operationErrorPath.executed &&
+                (!artifacts.operationErrorPath.createOperationSucceeded ||
+                    !artifacts.operationErrorPath.updateAadServiceSpecific ||
+                    !artifacts.operationErrorPath.oversizedUpdateRejected ||
+                    !artifacts.operationErrorPath.abortInvalidatedHandle)
+            ) {
+                add(
+                    fact(
+                        "Operation path",
+                        "Keystore2 operation error handling diverged from native-style semantics.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.biometricIntegration.executed &&
+                artifacts.biometricIntegration.strongBiometricAvailable &&
+                (!artifacts.biometricIntegration.keyCreated || !artifacts.biometricIntegration.keyRetrieved)
+            ) {
+                add(
+                    fact(
+                        "Biometric TEE",
+                        "Strong biometric was available, but user-auth-bound key creation or retrieval failed.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.binderHookBootstrap.executed && !artifacts.binderHookBootstrap.hookInstalled) {
+                add(
+                    fact(
+                        "Binder hook",
+                        "Binder hook bootstrap did not complete successfully.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.binderPatchMode.executed &&
+                artifacts.binderPatchMode.hookInstalled &&
+                (artifacts.binderPatchMode.leafDiffers || artifacts.binderPatchMode.chainDiffers)
+            ) {
+                add(
+                    fact(
+                        "Patch mode",
+                        "generateKey and getKeyEntry returned different certificate materials.",
+                        TeeSignalLevel.FAIL
+                    )
+                )
+            }
+            if (artifacts.binderChainConsistency.executed &&
+                (
+                    !artifacts.binderChainConsistency.hookInstalled ||
+                        artifacts.binderChainConsistency.suspiciousLeafIssuerSpki ||
+                        !artifacts.binderChainConsistency.activeProbeSecondCycleSucceeded ||
+                        !artifacts.binderChainConsistency.deleteEntryRemovedAlias ||
+                        (artifacts.binderChainConsistency.binderMaterialAvailable &&
+                            !artifacts.binderChainConsistency.chainMatches) ||
+                        (artifacts.binderChainConsistency.generateMaterialAvailable &&
+                            artifacts.binderChainConsistency.binderMaterialAvailable &&
+                            (
+                                !artifacts.binderChainConsistency.generateVsGetKeyEntryLeafMatches ||
+                                    !artifacts.binderChainConsistency.generateVsGetKeyEntryChainMatches
+                                ))
+                    )
+            ) {
+                add(
+                    fact(
+                        "Binder chain",
+                        if (!artifacts.binderChainConsistency.hookInstalled) {
+                            "Binder capture hook bootstrap failed."
+                        } else {
+                            "Java KeyStore, generateKey, and getKeyEntry certificate materials diverged."
+                        },
                         TeeSignalLevel.FAIL
                     )
                 )
@@ -562,9 +704,93 @@ class TeeReportReducer(
                     )
                     add(
                         fact(
+                            "Legacy keystore",
+                            legacyKeystorePathValue(artifacts),
+                            legacyKeystorePathLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "listEntries",
+                            listEntriesConsistencyValue(artifacts),
+                            listEntriesConsistencyLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "listEntriesBatched",
+                            listEntriesBatchedValue(artifacts),
+                            listEntriesBatchedLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Metadata key",
+                            keyMetadataSemanticsValue(artifacts),
+                            keyMetadataSemanticsLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Metadata shape",
+                            keyMetadataShapeValue(artifacts),
+                            keyMetadataShapeLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
                             "Pure cert",
                             pureCertificateValue(artifacts),
                             if (artifacts.pureCertificate.pureCertificateReturnsNullKey) TeeSignalLevel.PASS else TeeSignalLevel.FAIL
+                        )
+                    )
+                    add(
+                        fact(
+                            "Pure cert level",
+                            pureCertificateTopLevelSecurityValue(artifacts),
+                            pureCertificateTopLevelSecurityLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Pure cert metadata",
+                            pureCertificateMetadataSecurityValue(artifacts),
+                            pureCertificateMetadataSecurityLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Operation path",
+                            operationErrorPathValue(artifacts),
+                            operationErrorPathLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Biometric TEE",
+                            biometricIntegrationValue(artifacts),
+                            biometricIntegrationLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Binder hook",
+                            binderHookBootstrapValue(artifacts),
+                            binderHookBootstrapLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Patch mode",
+                            binderPatchModeValue(artifacts),
+                            binderPatchModeLevel(artifacts)
+                        )
+                    )
+                    add(
+                        fact(
+                            "Binder chain",
+                            binderChainConsistencyValue(artifacts),
+                            binderChainConsistencyLevel(artifacts)
                         )
                     )
                     add(
@@ -1063,6 +1289,55 @@ class TeeReportReducer(
         }
     }
 
+    private fun pureCertificateTopLevelSecurityValue(artifacts: TeeScanArtifacts): String {
+        return when {
+            !artifacts.pureCertificateSecurityLevel.executed -> "Skipped"
+            artifacts.pureCertificateSecurityLevel.securityLevelPresent -> "Security level exposed"
+            else -> "No security level exposed"
+        }
+    }
+
+    private fun pureCertificateMetadataSecurityValue(artifacts: TeeScanArtifacts): String {
+        return when {
+            !artifacts.pureCertificateSecurityLevel.executed -> "Skipped"
+            artifacts.pureCertificateSecurityLevel.metadataSecurityLevelPresent -> "Metadata security level exposed"
+            else -> "No metadata security level exposed"
+        }
+    }
+
+    private fun keyMetadataSemanticsValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.keyMetadataSemantics
+        return when {
+            !result.executed -> "Skipped"
+            result.usesKeyIdDomain && result.aliasCleared -> "KEY_ID normalized"
+            else -> "Descriptor mismatch"
+        }
+    }
+
+    private fun keyMetadataShapeValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.keyMetadataShape
+        return when {
+            !result.executed -> "Skipped"
+            result.modificationTimeValid && result.hasOriginTag -> "System fields present"
+            else -> "System fields missing"
+        }
+    }
+
+    private fun operationErrorPathValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.operationErrorPath
+        val status = when {
+            !result.executed -> "Skipped"
+            !result.createOperationSucceeded -> "createOperation failed"
+            !result.updateAadServiceSpecific -> "updateAad mismatch"
+            !result.oversizedUpdateRejected -> "Oversized update accepted"
+            !result.abortInvalidatedHandle -> "Abort left operation alive"
+            result.fallbackCompatParamsUsed -> "Compatibility params required"
+            else -> "Native-style errors"
+        }
+        val detail = result.detail.takeIf { it.isNotBlank() } ?: return status
+        return "$status • $detail"
+    }
+
     private fun updateSubcomponentValue(artifacts: TeeScanArtifacts): String {
         return when {
             artifacts.updateSubcomponent.keyNotFoundStyleFailure -> "Key-not-found style failure"
@@ -1097,6 +1372,70 @@ class TeeReportReducer(
         }
     }
 
+    private fun biometricIntegrationValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.biometricIntegration
+        return when {
+            !result.executed -> "Skipped"
+            !result.strongBiometricAvailable -> "Strong biometric unavailable"
+            result.keyCreated && result.keyRetrieved -> "User-auth key path available"
+            result.keyCreated -> "Created but getKey() returned null"
+            else -> "User-auth key path failed"
+        }
+    }
+
+    private fun binderChainConsistencyValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.binderChainConsistency
+        val status = when {
+            !result.executed -> "Skipped"
+            !result.hookInstalled -> "Hook bootstrap failed"
+            result.suspiciousLeafIssuerSpki -> "Leaf SPKI matched issuer SPKI"
+            !result.activeProbeSecondCycleSucceeded -> "Repeated active probe failed"
+            !result.deleteEntryRemovedAlias -> "deleteEntry left alias present"
+            !result.keystoreChainAvailable -> "Java chain unavailable"
+            !result.binderMaterialAvailable -> "Binder chain unavailable"
+            !result.generateVsGetKeyEntryLeafMatches -> "generateKey leaf differed from getKeyEntry"
+            !result.generateVsGetKeyEntryChainMatches -> "generateKey chain differed from getKeyEntry"
+            result.chainMatches -> "Java and binder chains aligned"
+            result.leafMatches -> "Leaf matched but chain diverged"
+            else -> "Leaf and chain diverged"
+        }
+        val detail = result.detail.takeIf { it.isNotBlank() } ?: return status
+        return "$status • $detail"
+    }
+
+    private fun binderHookBootstrapValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.binderHookBootstrap
+        return when {
+            !result.executed -> "Skipped"
+            result.hookInstalled -> "Hook installed"
+            else -> "Hook bootstrap failed"
+        }
+    }
+
+    private fun legacyKeystorePathValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.legacyKeystorePath
+        return when {
+            !result.executed -> "Skipped"
+            !result.hookInstalled -> "Hook unavailable"
+            !result.legacyMaterialAvailable -> "Legacy path not observed"
+            result.chainMatches -> "Legacy path aligned"
+            result.userCertCaptured || result.caCertCaptured -> "Legacy path captured but diverged"
+            else -> "Legacy path unavailable"
+        }
+    }
+
+    private fun binderPatchModeValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.binderPatchMode
+        return when {
+            !result.executed -> "Skipped"
+            !result.hookInstalled -> "Hook unavailable"
+            result.leafDiffers -> "Leaf differed between generateKey and getKeyEntry"
+            result.chainDiffers -> "Chain differed between generateKey and getKeyEntry"
+            result.generateMaterialAvailable && result.keyEntryMaterialAvailable -> "generateKey/getKeyEntry aligned"
+            else -> "Capture unavailable"
+        }
+    }
+
     private fun strongBoxValue(artifacts: TeeScanArtifacts): String {
         return when {
             artifacts.strongBox.hardFailures.isNotEmpty() -> artifacts.strongBox.hardFailures.first()
@@ -1115,12 +1454,157 @@ class TeeReportReducer(
         }
     }
 
+    private fun listEntriesConsistencyValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.listEntriesConsistency
+        return when {
+            !result.executed -> "Skipped"
+            result.badParcelableLikeCrash -> "BadParcelable-style crash"
+            result.inconsistent -> "containsAlias/listEntries mismatch"
+            else -> "containsAlias and aliases aligned"
+        }
+    }
+
+    private fun listEntriesBatchedValue(artifacts: TeeScanArtifacts): String {
+        val result = artifacts.listEntriesBatched
+        return when {
+            !result.executed -> "Skipped"
+            result.cursorEchoed -> "Cursor echoed in page"
+            result.expectedNextMissing -> "Expected next alias missing"
+            else -> "Cursor semantics aligned"
+        }
+    }
+
     private fun aesGcmLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
         return when {
             !artifacts.aesGcm.executed -> TeeSignalLevel.INFO
             !artifacts.aesGcm.roundTripSucceeded -> TeeSignalLevel.FAIL
             artifacts.aesGcm.insideSecureHardware == false -> TeeSignalLevel.WARN
             else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun listEntriesConsistencyLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.listEntriesConsistency
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.badParcelableLikeCrash || result.inconsistent -> TeeSignalLevel.FAIL
+            else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun listEntriesBatchedLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.listEntriesBatched
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.cursorEchoed -> TeeSignalLevel.FAIL
+            result.expectedNextMissing -> TeeSignalLevel.WARN
+            else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun keyMetadataSemanticsLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.keyMetadataSemantics
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.usesKeyIdDomain && result.aliasCleared -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.FAIL
+        }
+    }
+
+    private fun keyMetadataShapeLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.keyMetadataShape
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.modificationTimeValid && result.hasOriginTag -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.FAIL
+        }
+    }
+
+    private fun pureCertificateTopLevelSecurityLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.pureCertificateSecurityLevel
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.securityLevelPresent -> TeeSignalLevel.FAIL
+            else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun pureCertificateMetadataSecurityLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.pureCertificateSecurityLevel
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.metadataSecurityLevelPresent -> TeeSignalLevel.INFO
+            else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun operationErrorPathLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.operationErrorPath
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            !result.createOperationSucceeded ||
+                !result.updateAadServiceSpecific ||
+                !result.oversizedUpdateRejected ||
+                !result.abortInvalidatedHandle -> TeeSignalLevel.FAIL
+            result.fallbackCompatParamsUsed -> TeeSignalLevel.WARN
+
+            else -> TeeSignalLevel.PASS
+        }
+    }
+
+    private fun biometricIntegrationLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.biometricIntegration
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            !result.strongBiometricAvailable -> TeeSignalLevel.INFO
+            result.keyCreated && result.keyRetrieved -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.FAIL
+        }
+    }
+
+    private fun binderChainConsistencyLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.binderChainConsistency
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            !result.hookInstalled -> TeeSignalLevel.FAIL
+            result.suspiciousLeafIssuerSpki -> TeeSignalLevel.FAIL
+            !result.activeProbeSecondCycleSucceeded -> TeeSignalLevel.FAIL
+            !result.deleteEntryRemovedAlias -> TeeSignalLevel.FAIL
+            !result.keystoreChainAvailable || !result.binderMaterialAvailable -> TeeSignalLevel.INFO
+            !result.generateVsGetKeyEntryLeafMatches || !result.generateVsGetKeyEntryChainMatches -> TeeSignalLevel.FAIL
+            result.chainMatches -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.FAIL
+        }
+    }
+
+    private fun binderHookBootstrapLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.binderHookBootstrap
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            result.hookInstalled -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.FAIL
+        }
+    }
+
+    private fun legacyKeystorePathLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.legacyKeystorePath
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            !result.hookInstalled -> TeeSignalLevel.INFO
+            !result.legacyMaterialAvailable -> TeeSignalLevel.INFO
+            result.chainMatches -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.WARN
+        }
+    }
+
+    private fun binderPatchModeLevel(artifacts: TeeScanArtifacts): TeeSignalLevel {
+        val result = artifacts.binderPatchMode
+        return when {
+            !result.executed -> TeeSignalLevel.INFO
+            !result.hookInstalled -> TeeSignalLevel.FAIL
+            result.leafDiffers || result.chainDiffers -> TeeSignalLevel.FAIL
+            result.generateMaterialAvailable && result.keyEntryMaterialAvailable -> TeeSignalLevel.PASS
+            else -> TeeSignalLevel.INFO
         }
     }
 

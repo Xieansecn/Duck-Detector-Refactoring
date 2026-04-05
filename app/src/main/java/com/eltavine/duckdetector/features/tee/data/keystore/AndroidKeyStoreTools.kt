@@ -11,6 +11,7 @@ import java.security.Signature
 import java.security.cert.X509Certificate
 import java.security.spec.ECGenParameterSpec
 import java.util.Calendar
+import javax.crypto.KeyGenerator
 import javax.security.auth.x500.X500Principal
 
 object AndroidKeyStoreTools {
@@ -130,6 +131,35 @@ object AndroidKeyStoreTools {
         signature.initSign(privateKey)
         signature.update(payload)
         return signature.sign()
+    }
+
+    fun generateBiometricBoundAesKey(
+        keyStore: KeyStore,
+        alias: String,
+    ) {
+        safeDelete(keyStore, alias)
+        val builder = KeyGenParameterSpec.Builder(
+            alias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setUserAuthenticationRequired(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            builder.setUserAuthenticationParameters(
+                30,
+                KeyProperties.AUTH_BIOMETRIC_STRONG,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            builder.setUserAuthenticationValidityDurationSeconds(30)
+        }
+        val generator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            "AndroidKeyStore",
+        )
+        generator.init(builder.build())
+        generator.generateKey()
     }
 
     private fun baseBuilder(

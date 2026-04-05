@@ -16,13 +16,24 @@ import com.eltavine.duckdetector.features.tee.data.verification.certificate.Goog
 import com.eltavine.duckdetector.features.tee.data.verification.crl.CrlStatusService
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.IdAttestationProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.AesGcmRoundTripProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderChainConsistencyProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderHookBootstrapProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderPatchModeProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BiometricTeeIntegrationProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyLifecycleProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataSemanticsProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataShapeProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyPairConsistencyProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyboxImportProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.Keystore2HookProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.LegacyKeystorePathProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesBatchedProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesConsistencyProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationErrorPathProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationPruningProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.OversizedChallengeProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateProbe
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateSecurityLevelProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.TimingAnomalyProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.TimingSideChannelProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.UpdateSubcomponentProbe
@@ -58,7 +69,18 @@ class TeeRepository(
     private val oversizedChallengeProbe = OversizedChallengeProbe()
     private val keyboxImportProbe = KeyboxImportProbe(appContext)
     private val keystore2HookProbe = Keystore2HookProbe()
+    private val legacyKeystorePathProbe = LegacyKeystorePathProbe()
+    private val listEntriesConsistencyProbe = ListEntriesConsistencyProbe()
+    private val listEntriesBatchedProbe = ListEntriesBatchedProbe()
+    private val keyMetadataSemanticsProbe = KeyMetadataSemanticsProbe()
+    private val keyMetadataShapeProbe = KeyMetadataShapeProbe()
     private val pureCertificateProbe = PureCertificateProbe()
+    private val pureCertificateSecurityLevelProbe = PureCertificateSecurityLevelProbe()
+    private val operationErrorPathProbe = OperationErrorPathProbe()
+    private val biometricIntegrationProbe = BiometricTeeIntegrationProbe(appContext)
+    private val binderHookBootstrapProbe = BinderHookBootstrapProbe()
+    private val binderPatchModeProbe = BinderPatchModeProbe()
+    private val binderChainConsistencyProbe = BinderChainConsistencyProbe()
     private val updateSubcomponentProbe = UpdateSubcomponentProbe()
     private val operationPruningProbe = OperationPruningProbe()
     private val dualAlgorithmProbe = DualAlgorithmChainProbe(trustAnalyzer)
@@ -104,7 +126,18 @@ class TeeRepository(
                     oversizedChallenge = deepChecks.oversizedChallenge,
                     keyboxImport = deepChecks.keyboxImport,
                     keystore2Hook = deepChecks.keystore2Hook,
+                    legacyKeystorePath = deepChecks.legacyKeystorePath,
+                    listEntriesConsistency = deepChecks.listEntriesConsistency,
+                    listEntriesBatched = deepChecks.listEntriesBatched,
+                    keyMetadataSemantics = deepChecks.keyMetadataSemantics,
+                    keyMetadataShape = deepChecks.keyMetadataShape,
                     pureCertificate = deepChecks.pureCertificate,
+                    pureCertificateSecurityLevel = deepChecks.pureCertificateSecurityLevel,
+                    operationErrorPath = deepChecks.operationErrorPath,
+                    biometricIntegration = deepChecks.biometricIntegration,
+                    binderHookBootstrap = deepChecks.binderHookBootstrap,
+                    binderPatchMode = deepChecks.binderPatchMode,
+                    binderChainConsistency = deepChecks.binderChainConsistency,
                     updateSubcomponent = deepChecks.updateSubcomponent,
                     pruning = deepChecks.pruning,
                     dualAlgorithm = deepChecks.dualAlgorithm,
@@ -141,7 +174,14 @@ class TeeRepository(
         val oversizedChallenge = async { oversizedChallengeProbe.inspect(useStrongBox = useStrongBox) }
         val keyboxImport = async { keyboxImportProbe.inspect() }
         val keystore2Hook = async { keystore2HookProbe.inspect() }
+        val listEntriesConsistency = async { listEntriesConsistencyProbe.inspect() }
+        val listEntriesBatched = async { listEntriesBatchedProbe.inspect() }
+        val keyMetadataSemantics = async { keyMetadataSemanticsProbe.inspect() }
+        val keyMetadataShape = async { keyMetadataShapeProbe.inspect() }
         val pureCertificate = async { pureCertificateProbe.inspect() }
+        val pureCertificateSecurityLevel = async { pureCertificateSecurityLevelProbe.inspect() }
+        val operationErrorPath = async { operationErrorPathProbe.inspect() }
+        val biometricIntegration = async { biometricIntegrationProbe.inspect() }
         val updateSubcomponent = async { updateSubcomponentProbe.inspect(useStrongBox = useStrongBox) }
         val pruning = async { operationPruningProbe.inspect(useStrongBox = useStrongBox) }
         val dualAlgorithm = async {
@@ -150,22 +190,59 @@ class TeeRepository(
         }
         val idAttestation = async { idAttestationProbe.inspect(snapshot) }
         val strongBox = async { strongBoxProbe.inspect() }
+        val pairConsistencyResult = pairConsistency.await()
+        val aesGcmResult = aesGcm.await()
+        val lifecycleResult = lifecycle.await()
+        val timingResult = timing.await()
+        val timingSideChannelResult = timingSideChannel.await()
+        val oversizedChallengeResult = oversizedChallenge.await()
+        val keyboxImportResult = keyboxImport.await()
+        val keystore2HookResult = keystore2Hook.await()
+        val listEntriesConsistencyResult = listEntriesConsistency.await()
+        val listEntriesBatchedResult = listEntriesBatched.await()
+        val keyMetadataSemanticsResult = keyMetadataSemantics.await()
+        val keyMetadataShapeResult = keyMetadataShape.await()
+        val pureCertificateResult = pureCertificate.await()
+        val pureCertificateSecurityLevelResult = pureCertificateSecurityLevel.await()
+        val operationErrorPathResult = operationErrorPath.await()
+        val biometricIntegrationResult = biometricIntegration.await()
+        val updateSubcomponentResult = updateSubcomponent.await()
+        val pruningResult = pruning.await()
+        val dualAlgorithmResult = dualAlgorithm.await()
+        val idAttestationResult = idAttestation.await()
+        val strongBoxResult = strongBox.await()
+
+        val legacyKeystorePath = legacyKeystorePathProbe.inspect()
+        val binderHookBootstrap = binderHookBootstrapProbe.inspect()
+        val binderPatchMode = binderPatchModeProbe.inspect()
+        val binderChainConsistency = binderChainConsistencyProbe.inspect()
 
         DeferredChecks(
-            pairConsistency = pairConsistency.await(),
-            aesGcm = aesGcm.await(),
-            lifecycle = lifecycle.await(),
-            timing = timing.await(),
-            timingSideChannel = timingSideChannel.await(),
-            oversizedChallenge = oversizedChallenge.await(),
-            keyboxImport = keyboxImport.await(),
-            keystore2Hook = keystore2Hook.await(),
-            pureCertificate = pureCertificate.await(),
-            updateSubcomponent = updateSubcomponent.await(),
-            pruning = pruning.await(),
-            dualAlgorithm = dualAlgorithm.await(),
-            idAttestation = idAttestation.await(),
-            strongBox = strongBox.await(),
+            pairConsistency = pairConsistencyResult,
+            aesGcm = aesGcmResult,
+            lifecycle = lifecycleResult,
+            timing = timingResult,
+            timingSideChannel = timingSideChannelResult,
+            oversizedChallenge = oversizedChallengeResult,
+            keyboxImport = keyboxImportResult,
+            keystore2Hook = keystore2HookResult,
+            legacyKeystorePath = legacyKeystorePath,
+            listEntriesConsistency = listEntriesConsistencyResult,
+            listEntriesBatched = listEntriesBatchedResult,
+            keyMetadataSemantics = keyMetadataSemanticsResult,
+            keyMetadataShape = keyMetadataShapeResult,
+            pureCertificate = pureCertificateResult,
+            pureCertificateSecurityLevel = pureCertificateSecurityLevelResult,
+            operationErrorPath = operationErrorPathResult,
+            biometricIntegration = biometricIntegrationResult,
+            binderHookBootstrap = binderHookBootstrap,
+            binderPatchMode = binderPatchMode,
+            binderChainConsistency = binderChainConsistency,
+            updateSubcomponent = updateSubcomponentResult,
+            pruning = pruningResult,
+            dualAlgorithm = dualAlgorithmResult,
+            idAttestation = idAttestationResult,
+            strongBox = strongBoxResult,
         )
     }
 
@@ -180,7 +257,18 @@ private data class DeferredChecks(
     val oversizedChallenge: com.eltavine.duckdetector.features.tee.data.verification.keystore.OversizedChallengeResult,
     val keyboxImport: com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyboxImportResult,
     val keystore2Hook: com.eltavine.duckdetector.features.tee.data.verification.keystore.Keystore2HookResult,
+    val legacyKeystorePath: com.eltavine.duckdetector.features.tee.data.verification.keystore.LegacyKeystorePathResult,
+    val listEntriesConsistency: com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesConsistencyResult,
+    val listEntriesBatched: com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesBatchedResult,
+    val keyMetadataSemantics: com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataSemanticsResult,
+    val keyMetadataShape: com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataShapeResult,
     val pureCertificate: com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateResult,
+    val pureCertificateSecurityLevel: com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateSecurityLevelResult,
+    val operationErrorPath: com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationErrorPathResult,
+    val biometricIntegration: com.eltavine.duckdetector.features.tee.data.verification.keystore.BiometricTeeIntegrationResult,
+    val binderHookBootstrap: com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderHookBootstrapResult,
+    val binderPatchMode: com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderPatchModeResult,
+    val binderChainConsistency: com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderChainConsistencyResult,
     val updateSubcomponent: com.eltavine.duckdetector.features.tee.data.verification.keystore.UpdateSubcomponentResult,
     val pruning: com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationPruningResult,
     val dualAlgorithm: com.eltavine.duckdetector.features.tee.data.verification.certificate.DualAlgorithmChainResult,
@@ -228,9 +316,53 @@ private data class DeferredChecks(
                 available = false,
                 detail = "Keystore2 hook probe skipped.",
             ),
+            legacyKeystorePath = com.eltavine.duckdetector.features.tee.data.verification.keystore.LegacyKeystorePathResult(
+                executed = false,
+                detail = "Legacy keystore path probe skipped.",
+            ),
+            listEntriesConsistency = com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesConsistencyResult(
+                executed = false,
+                detail = "listEntries consistency probe skipped.",
+            ),
+            listEntriesBatched = com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesBatchedResult(
+                executed = false,
+                detail = "listEntriesBatched probe skipped.",
+            ),
+            keyMetadataSemantics = com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataSemanticsResult(
+                executed = false,
+                detail = "KeyMetadata semantics probe skipped.",
+            ),
+            keyMetadataShape = com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataShapeResult(
+                executed = false,
+                detail = "KeyMetadata shape probe skipped.",
+            ),
             pureCertificate = com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateResult(
                 pureCertificateReturnsNullKey = true,
                 detail = "Pure certificate probe skipped.",
+            ),
+            pureCertificateSecurityLevel = com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateSecurityLevelResult(
+                executed = false,
+                detail = "Pure certificate security-level probe skipped.",
+            ),
+            operationErrorPath = com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationErrorPathResult(
+                executed = false,
+                detail = "Operation error-path probe skipped.",
+            ),
+            biometricIntegration = com.eltavine.duckdetector.features.tee.data.verification.keystore.BiometricTeeIntegrationResult(
+                executed = false,
+                detail = "Biometric TEE integration probe skipped.",
+            ),
+            binderHookBootstrap = com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderHookBootstrapResult(
+                executed = false,
+                detail = "Binder hook bootstrap probe skipped.",
+            ),
+            binderPatchMode = com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderPatchModeResult(
+                executed = false,
+                detail = "Binder patch-mode probe skipped.",
+            ),
+            binderChainConsistency = com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderChainConsistencyResult(
+                executed = false,
+                detail = "Binder chain consistency probe skipped.",
             ),
             updateSubcomponent = com.eltavine.duckdetector.features.tee.data.verification.keystore.UpdateSubcomponentResult(
                 updateSucceeded = true,

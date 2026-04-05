@@ -84,7 +84,7 @@ class Keystore2PrivateBinderClient {
         val service = getKeystoreService() ?: return Keystore2PrivateSessionResult(
             failureReason = "Keystore2 service interface was not available after installing the private binder proxy.",
         )
-        val securityLevel = getSecurityLevel(
+        val securityLevel = resolveSecurityLevel(
             service = service,
             level = if (useStrongBox) SECURITY_LEVEL_STRONGBOX else SECURITY_LEVEL_TRUSTED_ENVIRONMENT,
         ) ?: return Keystore2PrivateSessionResult(
@@ -179,9 +179,116 @@ class Keystore2PrivateBinderClient {
     }
 
     fun getKeyEntry(service: Any, keyDescriptor: Any) {
-        service.javaClass
+        getKeyEntryResponse(service, keyDescriptor)
+    }
+
+    fun getKeyEntryResponse(service: Any, keyDescriptor: Any): Any? {
+        return service.javaClass
             .getMethod("getKeyEntry", keyDescriptor.javaClass)
             .invoke(service, keyDescriptor)
+    }
+
+    fun getMetadata(keyEntryResponse: Any): Any? = getFieldValue(keyEntryResponse, "metadata")
+
+    fun getReturnedDescriptor(keyEntryResponse: Any): Any? {
+        return getMetadata(keyEntryResponse)?.let { metadata ->
+            getFieldValue(metadata, "key")
+        } ?: getFieldValue(keyEntryResponse, "key")
+    }
+
+    fun getSecurityLevelBinder(keyEntryResponse: Any): Any? = getFieldValue(keyEntryResponse, "iSecurityLevel")
+
+    fun getMetadataSecurityLevel(keyEntryResponse: Any): Any? {
+        val metadata = getMetadata(keyEntryResponse) ?: return null
+        return getFieldValue(metadata, "keySecurityLevel")
+    }
+
+    fun getPureCertSecurityLevel(keyEntryResponse: Any): Any? {
+        getSecurityLevelBinder(keyEntryResponse)?.let { return it }
+        return getMetadataSecurityLevel(keyEntryResponse)
+    }
+
+    fun getMetadataModificationTimeMs(metadata: Any): Long? {
+        val raw = getFieldValue(metadata, "modificationTimeMs") ?: return null
+        return when (raw) {
+            is Long -> raw
+            is Int -> raw.toLong()
+            else -> null
+        }
+    }
+
+    fun getMetadataAuthorizations(metadata: Any): Array<Any?> {
+        return toObjectArray(getFieldValue(metadata, "authorizations"))
+    }
+
+    fun getAuthorizationTag(authorization: Any): Int? {
+        val keyParameter = getFieldValue(authorization, "keyParameter") ?: return null
+        return getFieldValue(keyParameter, "tag") as? Int
+    }
+
+    fun createKeyIdDescriptor(nspace: Long, aliasHint: String? = null): Any {
+        val descriptorClass = loadClass(CLASS_KEY_DESCRIPTOR)
+        val descriptor = descriptorClass.getDeclaredConstructor().newInstance()
+        setField(descriptor, "domain", getDomainKeyId())
+        setField(descriptor, "nspace", nspace)
+        setField(descriptor, "alias", aliasHint)
+        setField(descriptor, "blob", null)
+        return descriptor
+    }
+
+    fun getDescriptorDomain(descriptor: Any): Int? = getFieldValue(descriptor, "domain") as? Int
+
+    fun getDescriptorAlias(descriptor: Any): String? = getFieldValue(descriptor, "alias") as? String
+
+    fun getDescriptorNamespace(descriptor: Any): Long? {
+        val raw = getFieldValue(descriptor, "nspace") ?: return null
+        return when (raw) {
+            is Long -> raw
+            is Int -> raw.toLong()
+            else -> null
+        }
+    }
+
+    fun getDomainKeyId(): Int {
+        return runCatching {
+            val domainClass = loadClass("android.system.keystore2.Domain")
+            domainClass.getField("KEY_ID").getInt(null)
+        }.getOrDefault(DOMAIN_KEY_ID_FALLBACK)
+    }
+
+    fun getTagValue(name: String): Int? {
+        return runCatching {
+            val tagClass = loadClass("android.hardware.security.keymint.Tag")
+            tagClass.getField(name).getInt(null)
+        }.getOrNull()
+    }
+
+    fun getKeyPurposeValue(name: String): Int? {
+        return runCatching {
+            val purposeClass = loadClass("android.hardware.security.keymint.KeyPurpose")
+            purposeClass.getField(name).getInt(null)
+        }.getOrNull()
+    }
+
+    fun getDigestValue(name: String): Int? {
+        return runCatching {
+            val digestClass = loadClass("android.hardware.security.keymint.Digest")
+            digestClass.getField(name).getInt(null)
+        }.getOrNull()
+    }
+
+    fun getAlgorithmValue(name: String): Int? {
+        return runCatching {
+            val algorithmClass = loadClass("android.hardware.security.keymint.Algorithm")
+            algorithmClass.getField(name).getInt(null)
+        }.getOrNull()
+    }
+
+    fun getKeyMintErrorCodeValue(name: String): Int? {
+        return runCatching {
+            val errorCodeClass = loadClass("android.hardware.security.keymint.ErrorCode")
+            errorCodeClass.getField(name).getInt(null)
+        }.getOrNull()
     }
 
     fun deleteKey(service: Any, keyDescriptor: Any) {
@@ -192,6 +299,22 @@ class Keystore2PrivateBinderClient {
         }
     }
 
+    fun listEntries(service: Any): Array<Any?> {
+        val method = service.javaClass.methods.firstOrNull {
+            it.name == "listEntries" && it.parameterTypes.size >= 2
+        } ?: throw NoSuchMethodException("Unable to find hidden listEntries on ${service.javaClass.name}")
+        method.isAccessible = true
+        return toObjectArray(method.invoke(service, *buildListEntriesArgs(method.parameterTypes)))
+    }
+
+    fun listEntriesBatched(service: Any, startPastAlias: String): Array<Any?> {
+        val method = service.javaClass.methods.firstOrNull {
+            it.name == "listEntriesBatched" && it.parameterTypes.size >= 3
+        } ?: throw NoSuchMethodException("Unable to find hidden listEntriesBatched on ${service.javaClass.name}")
+        method.isAccessible = true
+        return toObjectArray(method.invoke(service, *buildListEntriesArgs(method.parameterTypes, startPastAlias)))
+    }
+
     fun createTimingAliases(prefix: String = DEFAULT_ALIAS_PREFIX): TimingKeyAliases {
         val suffix = System.nanoTime()
         return TimingKeyAliases(
@@ -200,6 +323,116 @@ class Keystore2PrivateBinderClient {
             nonAttestedAlias = "${prefix}_NonAttested_$suffix",
             attestKeyAlias = "${prefix}_AttestKey_$suffix",
         )
+    }
+
+    fun createSigningOperationParameters(): List<Any> {
+        val purposeTag = getTagValue("PURPOSE") ?: 0x10000001
+        val digestTag = getTagValue("DIGEST") ?: 0x20000005
+        val signPurpose = getKeyPurposeValue("SIGN") ?: 2
+        val sha256Digest = getDigestValue("SHA_2_256") ?: 4
+        return listOf(
+            createKeyParameter(purposeTag, signPurpose),
+            createKeyParameter(digestTag, sha256Digest),
+        )
+    }
+
+    fun createSigningOperationParametersWithAlgorithm(): List<Any> {
+        val algorithmTag = getTagValue("ALGORITHM") ?: 0x10000002
+        val ecAlgorithm = getAlgorithmValue("EC") ?: 3
+        return createSigningOperationParameters() + createKeyParameter(algorithmTag, ecAlgorithm)
+    }
+
+    fun createOperation(
+        securityLevel: Any,
+        keyDescriptor: Any,
+        parameters: List<Any>,
+    ): Any? {
+        val keyParameterClass = loadClass(CLASS_KEY_PARAMETER)
+        val array = java.lang.reflect.Array.newInstance(keyParameterClass, parameters.size)
+        parameters.forEachIndexed { index, value ->
+            java.lang.reflect.Array.set(array, index, value)
+        }
+        securityLevel.javaClass.methods.firstOrNull {
+            it.name == "createOperation" &&
+                it.parameterTypes.size == 3 &&
+                it.parameterTypes[0].isAssignableFrom(keyDescriptor.javaClass) &&
+                it.parameterTypes[1].isArray &&
+                (it.parameterTypes[2] == Boolean::class.javaPrimitiveType ||
+                    it.parameterTypes[2] == Boolean::class.java)
+        }?.let { exactMethod ->
+            exactMethod.isAccessible = true
+            return exactMethod.invoke(securityLevel, keyDescriptor, array, false)
+        }
+        val createOperationMethod = securityLevel.javaClass.methods.firstOrNull {
+            it.name == "createOperation" && it.parameterTypes.isNotEmpty()
+        } ?: throw NoSuchMethodException("Unable to find hidden createOperation on ${securityLevel.javaClass.name}")
+        createOperationMethod.isAccessible = true
+        val args = createOperationMethod.parameterTypes.mapIndexed { index, type ->
+            when {
+                index == 0 -> keyDescriptor
+                index == 1 && type.isArray -> array
+                type == Boolean::class.javaPrimitiveType || type == Boolean::class.java -> false
+                type == Int::class.javaPrimitiveType || type == Int::class.java -> 0
+                type == Long::class.javaPrimitiveType || type == Long::class.java -> 0L
+                type == ByteArray::class.java -> ByteArray(0)
+                else -> null
+            }
+        }.toTypedArray()
+        return createOperationMethod.invoke(securityLevel, *args)
+    }
+
+    fun getOperationHandle(createOperationResponse: Any?): Any? {
+        if (createOperationResponse == null) {
+            return null
+        }
+        return getFieldValue(createOperationResponse, "iOperation")
+            ?: getFieldValue(createOperationResponse, "operation")
+    }
+
+    fun getCertificateBlob(keyEntryResponse: Any): ByteArray? {
+        return (getFieldValue(keyEntryResponse, "certificate") as? ByteArray)
+            ?: (getMetadata(keyEntryResponse)?.let { getFieldValue(it, "certificate") } as? ByteArray)
+    }
+
+    fun getCertificateChainBlob(keyEntryResponse: Any): ByteArray? {
+        return (getFieldValue(keyEntryResponse, "certificateChain") as? ByteArray)
+            ?: (getMetadata(keyEntryResponse)?.let { getFieldValue(it, "certificateChain") } as? ByteArray)
+    }
+
+    fun abortOperation(operation: Any?) {
+        if (operation == null) {
+            return
+        }
+        operation.javaClass.getMethod("abort").invoke(operation)
+    }
+
+    fun updateOperation(operation: Any, input: ByteArray): Any? {
+        return operation.javaClass.getMethod("update", ByteArray::class.java).invoke(operation, input)
+    }
+
+    fun updateAadOperation(operation: Any, input: ByteArray): Any? {
+        return operation.javaClass.getMethod("updateAad", ByteArray::class.java).invoke(operation, input)
+    }
+
+    fun isServiceSpecificException(throwable: Throwable): Boolean {
+        return findThrowable(throwable) { it.javaClass.name == "android.os.ServiceSpecificException" } != null
+    }
+
+    fun extractServiceSpecificErrorCode(throwable: Throwable): Int? {
+        val serviceSpecific = findThrowable(throwable) {
+            it.javaClass.name == "android.os.ServiceSpecificException"
+        } ?: return null
+        return getFieldValue(serviceSpecific, "errorCode") as? Int
+    }
+
+    fun describeThrowable(throwable: Throwable): String {
+        val root = findRootCause(throwable)
+        val detail = root.message?.takeIf { it.isNotBlank() }
+        return if (detail != null) {
+            "${root.javaClass.simpleName}: $detail"
+        } else {
+            root.javaClass.simpleName
+        }
     }
 
     private fun invokeGenerateKey(
@@ -233,6 +466,22 @@ class Keystore2PrivateBinderClient {
         setField(parameter, "tag", tag)
 
         val valueClass = loadClass(CLASS_KEY_PARAMETER_VALUE)
+        val valueObject = createKeyParameterValue(valueClass, tag, value)
+        setField(parameter, "value", valueObject)
+        return parameter
+    }
+
+    private fun createKeyParameterValue(valueClass: Class<*>, tag: Int, value: Any): Any {
+        val factoryName = factoryNameForTag(tag)
+        if (factoryName != null) {
+            valueClass.methods.firstOrNull {
+                it.name == factoryName && it.parameterTypes.size == 1
+            }?.let { factory ->
+                factory.isAccessible = true
+                return factory.invoke(null, value)
+            }
+        }
+
         val valueObject = valueClass.getDeclaredConstructor().newInstance()
         val setterName = setterNameForTag(tag)
         val setter = valueClass.declaredMethods.firstOrNull {
@@ -240,8 +489,22 @@ class Keystore2PrivateBinderClient {
         } ?: throw NoSuchMethodException("Unable to find $setterName on ${valueClass.name}")
         setter.isAccessible = true
         setter.invoke(valueObject, value)
-        setField(parameter, "value", valueObject)
-        return parameter
+        return valueObject
+    }
+
+    private fun factoryNameForTag(tag: Int): String? {
+        return when (tag and 0xf0000000.toInt()) {
+            0x10000000, 0x20000000 -> when (tag and 0x0fffffff) {
+                1 -> "keyPurpose"
+                2 -> "algorithm"
+                5 -> "digest"
+                else -> null
+            }
+            0x30000000, 0x40000000 -> "integer"
+            0x70000000 -> "boolValue"
+            0x80000000.toInt(), 0x90000000.toInt() -> "blob"
+            else -> null
+        }
     }
 
     private fun setterNameForTag(tag: Int): String {
@@ -264,7 +527,7 @@ class Keystore2PrivateBinderClient {
         runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
     }
 
-    private fun getKeystoreService(): Any? {
+    fun getKeystoreService(): Any? {
         return runCatching {
             val binder = lookupBinder() ?: return null
             val stubClass = loadClass("${CLASS_IKEYSTORE_SERVICE}\$Stub")
@@ -273,7 +536,7 @@ class Keystore2PrivateBinderClient {
         }.getOrNull()
     }
 
-    private fun getSecurityLevel(service: Any, level: Int): Any? {
+    fun resolveSecurityLevel(service: Any, level: Int): Any? {
         return runCatching {
             val method = service.javaClass.methods.firstOrNull {
                 it.name == "getSecurityLevel" && it.parameterTypes.size == 1
@@ -420,6 +683,63 @@ class Keystore2PrivateBinderClient {
         field.set(target, value)
     }
 
+    private fun getFieldValue(target: Any, name: String): Any? {
+        return runCatching {
+            val field = target.javaClass.getField(name)
+            field.isAccessible = true
+            field.get(target)
+        }.recoverCatching {
+            val field = target.javaClass.getDeclaredField(name)
+            field.isAccessible = true
+            field.get(target)
+        }.getOrNull()
+    }
+
+    fun toObjectArray(value: Any?): Array<Any?> {
+        if (value == null || !value.javaClass.isArray) {
+            return emptyArray()
+        }
+        val length = java.lang.reflect.Array.getLength(value)
+        return Array(length) { index -> java.lang.reflect.Array.get(value, index) }
+    }
+
+    private fun buildListEntriesArgs(
+        parameterTypes: Array<Class<*>>,
+        startPastAlias: String? = null,
+    ): Array<Any?> {
+        return parameterTypes.map { type ->
+            when {
+                type == Int::class.javaPrimitiveType || type == Int::class.java -> 0
+                type == Long::class.javaPrimitiveType || type == Long::class.java -> -1L
+                type == String::class.java -> startPastAlias
+                type == Boolean::class.javaPrimitiveType || type == Boolean::class.java -> false
+                else -> null
+            }
+        }.toTypedArray()
+    }
+
+    private fun findThrowable(
+        throwable: Throwable,
+        predicate: (Throwable) -> Boolean,
+    ): Throwable? {
+        var current: Throwable? = throwable
+        while (current != null) {
+            if (predicate(current)) {
+                return current
+            }
+            current = current.cause
+        }
+        return null
+    }
+
+    private fun findRootCause(throwable: Throwable): Throwable {
+        var current = throwable
+        while (current.cause != null && current.cause !== current) {
+            current = current.cause!!
+        }
+        return current
+    }
+
     private fun loadClass(className: String): Class<*> {
         return try {
             Class.forName(className)
@@ -443,6 +763,7 @@ class Keystore2PrivateBinderClient {
         const val SECURITY_LEVEL_TRUSTED_ENVIRONMENT = 1
         const val SECURITY_LEVEL_STRONGBOX = 2
         const val DEFAULT_ALIAS_PREFIX = "Budin_Key_DuckTiming"
+        const val DOMAIN_KEY_ID_FALLBACK = 4
 
         private const val CLASS_IKEYSTORE_SERVICE = "android.system.keystore2.IKeystoreService"
         private const val CLASS_IKEYSTORE_SECURITY_LEVEL = "android.system.keystore2.IKeystoreSecurityLevel"

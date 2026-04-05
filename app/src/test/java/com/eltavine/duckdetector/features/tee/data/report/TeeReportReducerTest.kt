@@ -14,14 +14,25 @@ import com.eltavine.duckdetector.features.tee.data.verification.crl.CrlStatusRes
 import com.eltavine.duckdetector.features.tee.data.verification.boot.BootConsistencyResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.IdAttestationResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.AesGcmRoundTripResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderChainConsistencyResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderHookBootstrapResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BinderPatchModeResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.BiometricTeeIntegrationResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyLifecycleResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataSemanticsResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyMetadataShapeResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyPairConsistencyResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyboxImportProbe
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.KeyboxImportResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.Keystore2HookResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.LegacyKeystorePathResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesBatchedResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.ListEntriesConsistencyResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationErrorPathResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.OperationPruningResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.OversizedChallengeResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateResult
+import com.eltavine.duckdetector.features.tee.data.verification.keystore.PureCertificateSecurityLevelResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.TimingAnomalyResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.TimingSideChannelResult
 import com.eltavine.duckdetector.features.tee.data.verification.keystore.UpdateSubcomponentResult
@@ -61,6 +72,224 @@ class TeeReportReducerTest {
             it.title == "Keystore2" && it.body.contains(
                 "Java-style"
             )
+        })
+    }
+
+    @Test
+    fun `metadata semantics anomaly becomes supplementary review without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                keyMetadataSemantics = KeyMetadataSemanticsResult(
+                    executed = true,
+                    usesKeyIdDomain = false,
+                    aliasCleared = false,
+                    detail = "domain=0 alias=test",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.summary.contains("KEY_ID", ignoreCase = true))
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Metadata key" && it.body.contains("Descriptor mismatch")
+        })
+    }
+
+    @Test
+    fun `list entries mismatch becomes supplementary review without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                listEntriesConsistency = ListEntriesConsistencyResult(
+                    executed = true,
+                    containsAlias = true,
+                    listedInAliases = false,
+                    inconsistent = true,
+                    detail = "containsAlias=true, listedInAliases=false",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.summary.contains("containsAlias()/aliases()", ignoreCase = true))
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "listEntries" && it.body.contains("mismatch", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `binder chain divergence becomes supplementary review without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderChainConsistency = BinderChainConsistencyResult(
+                    executed = true,
+                    hookInstalled = true,
+                    keystoreChainAvailable = true,
+                    binderMaterialAvailable = true,
+                    activeProbeSecondCycleSucceeded = true,
+                    leafMatches = true,
+                    chainMatches = false,
+                    keystoreChainLength = 3,
+                    binderChainLength = 2,
+                    detail = "leafMatches=true, chainMatches=false",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Binder chain" && it.body.contains("diverged", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `binder hook bootstrap failure becomes supplementary review without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderHookBootstrap = BinderHookBootstrapResult(
+                    executed = true,
+                    hookInstalled = false,
+                    detail = "bootstrap failed",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Binder hook" && it.body.contains("failed", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `binder chain delete entry residue is surfaced in checks`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderChainConsistency = BinderChainConsistencyResult(
+                    executed = true,
+                    hookInstalled = true,
+                    keystoreChainAvailable = true,
+                    binderMaterialAvailable = true,
+                    activeProbeSecondCycleSucceeded = true,
+                    chainMatches = true,
+                    deleteEntryRemovedAlias = false,
+                    detail = "deleteEntryRemovedAlias=false",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Binder chain" && it.body.contains("deleteEntry left alias present", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `binder chain repeated active probe failure is surfaced in checks`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderChainConsistency = BinderChainConsistencyResult(
+                    executed = true,
+                    hookInstalled = true,
+                    keystoreChainAvailable = true,
+                    binderMaterialAvailable = true,
+                    activeProbeRepeated = true,
+                    activeProbeSecondCycleSucceeded = false,
+                    detail = "cycle2 failed",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Binder chain" && it.body.contains("Repeated active probe failed", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `binder chain repeated active probe failure keeps cycle detail`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderChainConsistency = BinderChainConsistencyResult(
+                    executed = true,
+                    hookInstalled = true,
+                    keystoreChainAvailable = true,
+                    binderMaterialAvailable = false,
+                    activeProbeRepeated = true,
+                    activeProbeSecondCycleSucceeded = false,
+                    detail = "cycle2 binder material unavailable: Neither getKeyEntry nor generateKey exposed certificate material for the probe alias.",
+                ),
+            ),
+        )
+
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Binder chain" &&
+                it.body.contains("Repeated active probe failed", ignoreCase = true) &&
+                it.body.contains("binder material unavailable", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `patch mode divergence becomes supplementary review without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                binderPatchMode = BinderPatchModeResult(
+                    executed = true,
+                    hookInstalled = true,
+                    generateMaterialAvailable = true,
+                    keyEntryMaterialAvailable = true,
+                    leafDiffers = true,
+                    detail = "leafDiffers=true",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Patch mode" && it.body.contains("Leaf differed", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `legacy keystore divergence stays supplementary without changing attestation verdict`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                legacyKeystorePath = LegacyKeystorePathResult(
+                    executed = true,
+                    hookInstalled = true,
+                    userCertCaptured = true,
+                    caCertCaptured = true,
+                    legacyMaterialAvailable = true,
+                    chainMatches = false,
+                    legacyChainLength = 2,
+                    detail = "legacy mismatch",
+                ),
+            ),
+        )
+
+        assertEquals(TeeVerdict.CONSISTENT, report.verdict)
+        assertTrue(report.sections.single { it.title == "Checks" }.items.any {
+            it.title == "Legacy keystore" && it.body.contains("diverged", ignoreCase = true)
+        })
+    }
+
+    @Test
+    fun `pure certificate top level and metadata security levels render as separate checks`() {
+        val report = reducer.reduce(
+            baseArtifacts(
+                pureCertificateSecurityLevel = PureCertificateSecurityLevelResult(
+                    executed = true,
+                    securityLevelPresent = false,
+                    metadataSecurityLevelPresent = true,
+                    detail = "metadata keySecurityLevel present",
+                ),
+            ),
+        )
+
+        val checks = report.sections.single { it.title == "Checks" }.items
+        assertTrue(checks.any {
+            it.title == "Pure cert level" && it.body == "No security level exposed"
+        })
+        assertTrue(checks.any {
+            it.title == "Pure cert metadata" && it.body == "Metadata security level exposed"
         })
     }
 
@@ -947,6 +1176,50 @@ class TeeReportReducerTest {
         ),
         rkp: TeeRkpState = TeeRkpState(),
         soter: TeeSoterState = TeeSoterState(),
+        legacyKeystorePath: LegacyKeystorePathResult = LegacyKeystorePathResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        listEntriesConsistency: ListEntriesConsistencyResult = ListEntriesConsistencyResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        listEntriesBatched: ListEntriesBatchedResult = ListEntriesBatchedResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        keyMetadataSemantics: KeyMetadataSemanticsResult = KeyMetadataSemanticsResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        keyMetadataShape: KeyMetadataShapeResult = KeyMetadataShapeResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        pureCertificateSecurityLevel: PureCertificateSecurityLevelResult = PureCertificateSecurityLevelResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        operationErrorPath: OperationErrorPathResult = OperationErrorPathResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        biometricIntegration: BiometricTeeIntegrationResult = BiometricTeeIntegrationResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        binderHookBootstrap: BinderHookBootstrapResult = BinderHookBootstrapResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        binderPatchMode: BinderPatchModeResult = BinderPatchModeResult(
+            executed = false,
+            detail = "skipped",
+        ),
+        binderChainConsistency: BinderChainConsistencyResult = BinderChainConsistencyResult(
+            executed = false,
+            detail = "skipped",
+        ),
     ): TeeScanArtifacts {
         return TeeScanArtifacts(
             snapshot = AttestationSnapshot(
@@ -1010,10 +1283,21 @@ class TeeReportReducerTest {
                 detail = "skipped",
             ),
             keystore2Hook = keystore2Hook,
+            legacyKeystorePath = legacyKeystorePath,
+            listEntriesConsistency = listEntriesConsistency,
+            listEntriesBatched = listEntriesBatched,
+            keyMetadataSemantics = keyMetadataSemantics,
+            keyMetadataShape = keyMetadataShape,
             pureCertificate = PureCertificateResult(
                 pureCertificateReturnsNullKey = true,
                 detail = "ok",
             ),
+            pureCertificateSecurityLevel = pureCertificateSecurityLevel,
+            operationErrorPath = operationErrorPath,
+            biometricIntegration = biometricIntegration,
+            binderHookBootstrap = binderHookBootstrap,
+            binderPatchMode = binderPatchMode,
+            binderChainConsistency = binderChainConsistency,
             updateSubcomponent = UpdateSubcomponentResult(
                 updateSucceeded = true,
                 keyNotFoundStyleFailure = false,
