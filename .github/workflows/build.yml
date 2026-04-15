@@ -513,6 +513,8 @@ jobs:
           RETRY: Final[int] = 2
           DELAY_BETWEEN_ACTIONS: Final[float] = 0.3
 
+          ws_lock = asyncio.Lock()
+
           def html_to_plain_text(text: str) -> str:
               text = re.sub(r"<br\s*/?>", "\n", text)
               text = text.replace("</pre>", "\n").replace("<pre>", "")
@@ -529,27 +531,21 @@ jobs:
               params: Dict[str, Any],
           ) -> Dict[str, Any]:
               echo: str = str(uuid.uuid4())
-
               payload: Dict[str, Any] = {
                   "action": action,
                   "params": params,
                   "echo": echo,
               }
-
-              await ws.send(json.dumps(payload, ensure_ascii=False))
-
-              while True:
-                  raw: str = await ws.recv()
-                  data: Dict[str, Any] = json.loads(raw)
-
-                  if data.get("echo") != echo:
+              async with ws_lock:
+                  await ws.send(json.dumps(payload, ensure_ascii=False))
+                  while True:
+                      raw: str = await ws.recv()
+                      data: Dict[str, Any] = json.loads(raw)
+                      if data.get("echo") == echo:
+                          if data.get("status") != "ok":
+                              raise RuntimeError(f"{action} failed: {data}")
+                          return data
                       continue
-
-                  if data.get("status") != "ok":
-                      raise RuntimeError(f"{action} failed: {data}")
-
-                  return data
-
 
           async def download_apk(ws: WebSocketClientProtocol) -> str:
               resp: Dict[str, Any] = await call_api(ws, "download_file", {
