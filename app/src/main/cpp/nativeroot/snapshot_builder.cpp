@@ -71,9 +71,9 @@ namespace duckdetector::nativeroot {
                                      ? prctl_probe.numeric_value
                                      : ksu_supercall_probe.numeric_value;
         snapshot.prctl_probe_hit = prctl_probe.flags.kernel_su;
-        snapshot.ksu_supercall_attempted = ksu_supercall_probe.checked_count > 0;
-        snapshot.ksu_supercall_probe_hit = ksu_supercall_probe.flags.kernel_su;
-        snapshot.ksu_supercall_blocked = ksu_supercall_probe.denied_count > 0;
+        snapshot.ksu_supercall_attempted = ksu_supercall_probe.checked_count > 0 || ksu_supercall_latency_probe.checked_count > 0;
+        snapshot.ksu_supercall_probe_hit = ksu_supercall_probe.flags.kernel_su || ksu_supercall_latency_probe.flags.kernel_su || ksu_supercall_latency_probe.flags.apatch;
+        snapshot.ksu_supercall_blocked = ksu_supercall_probe.denied_count > 0 || ksu_supercall_latency_probe.denied_count > 0;
         snapshot.ksu_supercall_safe_mode = ksu_supercall_probe.aux_flags != 0;
         snapshot.ksu_supercall_lkm =
                 (ksu_supercall_probe.extra_numeric_value & (1U << 0)) != 0;
