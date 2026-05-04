@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "nativeroot/probes/ksu_supercall_latency_probe.h"
+#include "nativeroot/probes/kernelpatch_nr_supercall_latency_probe.h"
 
 #include <csignal>
 #include <cstdio>
@@ -29,7 +29,7 @@
 
 namespace duckdetector::nativeroot {
 
-#if defined(__aarch64__) 
+#if defined(__aarch64__)
 
     namespace {
         constexpr int kIterations = 100000;
@@ -130,7 +130,7 @@ namespace duckdetector::nativeroot {
         }
     } // namespace
 
-    ProbeResult run_ksu_supercall_latency_probe() {
+    ProbeResult run_kernelpatch_supercall_latency_check() {
         ProbeResult result;
         bool blocked = false;
         LatencyResult latencies = {0.0, 0.0, false};
@@ -145,7 +145,7 @@ namespace duckdetector::nativeroot {
                         .label = "System Call Filtered",
                         .value = "SIGSYS Received",
                         .detail = "Syscall 45 was blocked by Seccomp on ARM64.",
-                        .severity = Severity::kInfo,
+                        .severity = Severity::kDanger,
                     }
                 );
             }
@@ -157,25 +157,26 @@ namespace duckdetector::nativeroot {
 
         double diff = latencies.full_latency - latencies.empty_latency;
 
+        char detail[256];
+        snprintf(
+                detail,
+                sizeof(detail),
+                "Full: %.4f us, Empty: %.4f us, Diff: %.4f us",
+                latencies.full_latency,
+                latencies.empty_latency,
+                diff
+        );
+
+        result.extra_text = detail;
+
         if (diff > 3.0) {
-            result.flags.kernel_su = true;
             result.flags.apatch = true;
             result.hit_count = 1;
-
-            char detail[256];
-            snprintf(
-                    detail,
-                    sizeof(detail),
-                    "Full: %.4f us, Empty: %.4f us, Diff: %.4f us",
-                    latencies.full_latency,
-                    latencies.empty_latency,
-                    diff
-            );
 
             result.findings.push_back(
                     Finding{
                             .group = "SYSCALL",
-                            .label = "Supercall Latency Anomalous",
+                            .label = "KernelPatch supercall delay",
                             .value = "Detected",
                             .detail = detail,
                             .severity = Severity::kDanger,
@@ -188,8 +189,9 @@ namespace duckdetector::nativeroot {
 
 #else
 
-    ProbeResult run_ksu_supercall_latency_probe() {
+    ProbeResult run_kernelpatch_supercall_latency_check() {
         ProbeResult result;
+        result.extra_text = "";
         return result;
     }
 
