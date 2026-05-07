@@ -94,8 +94,6 @@ class SystemPropertiesRepository(
             readsByProperty = propertyCache,
             nativeSnapshot = nativeSnapshot,
         )
-        val readOnlySerialSignals = buildReadOnlySerialSignals(nativeSnapshot)
-        val readOnlySerialFindingCount = readOnlySerialSignals.size
         val propAreaSignals = buildPropAreaSignals(nativeSnapshot)
 
         val allSignals =
@@ -103,13 +101,11 @@ class SystemPropertiesRepository(
                     buildSignals +
                     sourceSignals +
                     consistencySignals +
-                    readOnlySerialSignals +
                     propAreaSignals
         if (
             allSignals.isEmpty() &&
             infoSignals.isEmpty() &&
-            !nativeSnapshot.propAreaAvailable &&
-            !nativeSnapshot.readOnlySerialAvailable
+            !nativeSnapshot.propAreaAvailable
         ) {
             return SystemPropertiesReport.failed(
                 "No readable system properties, raw boot parameters, or build constants were collected.",
@@ -144,9 +140,6 @@ class SystemPropertiesRepository(
             propAreaAvailable = nativeSnapshot.propAreaAvailable,
             propAreaContextCount = nativeSnapshot.propAreaContextCount,
             propAreaHoleCount = nativeSnapshot.propAreaHoleCount,
-            readOnlySerialAvailable = nativeSnapshot.readOnlySerialAvailable,
-            readOnlySerialCheckedCount = nativeSnapshot.readOnlySerialCheckedCount,
-            readOnlySerialFindingCount = readOnlySerialFindingCount,
             methods = buildMethods(
                 ruleSignals = ruleSignals,
                 infoSignals = infoSignals,
@@ -159,8 +152,6 @@ class SystemPropertiesRepository(
                 buildSignals = buildSignals,
                 sourceSignals = sourceSignals,
                 consistencySignals = consistencySignals,
-                readOnlySerialAvailable = nativeSnapshot.readOnlySerialAvailable,
-                readOnlySerialCheckedCount = nativeSnapshot.readOnlySerialCheckedCount,
                 propAreaSignals = propAreaSignals,
                 propAreaAvailable = nativeSnapshot.propAreaAvailable,
                 propAreaContextCount = nativeSnapshot.propAreaContextCount,
@@ -360,35 +351,6 @@ class SystemPropertiesRepository(
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    internal fun buildReadOnlySerialSignals(
-        nativeSnapshot: SystemPropertiesNativeSnapshot,
-    ): List<SystemPropertySignal> {
-        return emptyList()
-    }
-
-    internal fun buildReadOnlySerialMethod(
-        readOnlySerialAvailable: Boolean,
-        readOnlySerialCheckedCount: Int,
-    ): SystemPropertiesMethodResult {
-        return SystemPropertiesMethodResult(
-            label = "RO property handles",
-            summary = when {
-                !readOnlySerialAvailable -> "Unavailable"
-                else -> "$readOnlySerialCheckedCount reachable"
-            },
-            outcome = when {
-                readOnlySerialAvailable -> SystemPropertiesMethodOutcome.CLEAN
-                else -> SystemPropertiesMethodOutcome.SUPPORT
-            },
-            detail = if (readOnlySerialAvailable) {
-                "Verified native libc handles for $readOnlySerialCheckedCount tracked ro.* property/properties. AOSP exposes property serials as opaque change tokens; the stored value also carries length and private flags, so low-bit patterns are not scored."
-            } else {
-                "Read-only property native handle sampling unavailable."
-            },
-        )
-    }
-
     internal fun buildPropAreaMethod(
         propAreaAvailable: Boolean,
         propAreaContextCount: Int,
@@ -428,8 +390,6 @@ class SystemPropertiesRepository(
         buildSignals: List<SystemPropertySignal>,
         sourceSignals: List<SystemPropertySignal>,
         consistencySignals: List<SystemPropertySignal>,
-        readOnlySerialAvailable: Boolean,
-        readOnlySerialCheckedCount: Int,
         propAreaSignals: List<SystemPropertySignal>,
         propAreaAvailable: Boolean,
         propAreaContextCount: Int,
@@ -536,10 +496,6 @@ class SystemPropertiesRepository(
                     else -> SystemPropertiesMethodOutcome.CLEAN
                 },
                 detail = "Framework-vs-property, fingerprint-tail, raw-boot, and lock-state coherence checks.",
-            ),
-            buildReadOnlySerialMethod(
-                readOnlySerialAvailable = readOnlySerialAvailable,
-                readOnlySerialCheckedCount = readOnlySerialCheckedCount,
             ),
             buildPropAreaMethod(
                 propAreaAvailable = propAreaAvailable,

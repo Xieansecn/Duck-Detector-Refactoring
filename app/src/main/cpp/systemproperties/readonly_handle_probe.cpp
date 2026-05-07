@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "systemproperties/readonly_serial_probe.h"
+#include "systemproperties/readonly_handle_probe.h"
 
 #include <sys/system_properties.h>
 
@@ -36,9 +36,9 @@ namespace systemproperties {
 
     }  // namespace
 
-    ReadOnlyPropertySerialSnapshot
-    scan_readonly_property_serials(const std::vector<std::string> &properties) {
-        ReadOnlyPropertySerialSnapshot snapshot;
+    ReadOnlyPropertyHandleSnapshot
+    scan_readonly_property_handles(const std::vector<std::string> &properties) {
+        ReadOnlyPropertyHandleSnapshot snapshot;
 
         std::set<std::string> candidates;
         for (const std::string &property: properties) {
@@ -57,10 +57,8 @@ namespace systemproperties {
             ++snapshot.checked_count;
         }
 
-        // __system_property_serial() is an opaque change token in the public API.
-        // Its storage currently also carries value length and bionic-private flags,
-        // so low-bit patterns are not scored as tamper evidence.
-        snapshot.finding_count = 0;
+        // Only confirm that native libc can resolve tracked ro.* handles.
+        // Do not inspect bionic prop serial bits; the public serial is opaque.
         return snapshot;
     }
 

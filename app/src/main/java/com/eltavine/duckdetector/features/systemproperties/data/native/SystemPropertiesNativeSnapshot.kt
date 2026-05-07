@@ -35,9 +35,8 @@ data class SystemPropertiesNativeSnapshot(
     val propAreaContextCount: Int = 0,
     val propAreaHoleCount: Int = 0,
     val propAreaFindings: List<PropAreaFinding> = emptyList(),
-    val readOnlySerialAvailable: Boolean = false,
-    val readOnlySerialCheckedCount: Int = 0,
-    val readOnlySerialFindingCount: Int = 0,
+    val readOnlyPropertyHandleAvailable: Boolean = false,
+    val readOnlyPropertyHandleCheckedCount: Int = 0,
 ) {
     val nativePropertyHitCount: Int
         get() = libcProperties.values.count { sanitizeLibcValue(it).isNotBlank() }

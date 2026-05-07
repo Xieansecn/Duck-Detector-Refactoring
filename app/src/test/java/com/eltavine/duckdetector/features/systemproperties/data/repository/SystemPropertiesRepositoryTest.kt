@@ -29,26 +29,6 @@ class SystemPropertiesRepositoryTest {
     private val repository = SystemPropertiesRepository()
 
     @Test
-    fun `read only serial findings are treated as metadata only`() {
-        val snapshot = SystemPropertiesNativeSnapshot(
-            readOnlySerialAvailable = true,
-            readOnlySerialCheckedCount = 6,
-            readOnlySerialFindingCount = 1,
-        )
-
-        val signals = repository.buildReadOnlySerialSignals(snapshot)
-        val method = repository.buildReadOnlySerialMethod(
-            readOnlySerialAvailable = snapshot.readOnlySerialAvailable,
-            readOnlySerialCheckedCount = snapshot.readOnlySerialCheckedCount,
-        )
-
-        assertTrue(signals.isEmpty())
-        assertEquals("6 reachable", method.summary)
-        assertEquals(SystemPropertiesMethodOutcome.CLEAN, method.outcome)
-        assertTrue(method.detail.orEmpty().contains("opaque change tokens"))
-    }
-
-    @Test
     fun `adbd config prop hole maps to danger`() {
         val snapshot = SystemPropertiesNativeSnapshot(
             propAreaAvailable = true,
@@ -109,11 +89,6 @@ class SystemPropertiesRepositoryTest {
     fun `unavailable prop area scan yields support without findings`() {
         val snapshot = SystemPropertiesNativeSnapshot()
 
-        val readOnlySignals = repository.buildReadOnlySerialSignals(snapshot)
-        val readOnlyMethod = repository.buildReadOnlySerialMethod(
-            readOnlySerialAvailable = snapshot.readOnlySerialAvailable,
-            readOnlySerialCheckedCount = snapshot.readOnlySerialCheckedCount,
-        )
         val signals = repository.buildPropAreaSignals(snapshot)
         val method = repository.buildPropAreaMethod(
             propAreaAvailable = snapshot.propAreaAvailable,
@@ -122,9 +97,6 @@ class SystemPropertiesRepositoryTest {
             propAreaSignals = signals,
         )
 
-        assertTrue(readOnlySignals.isEmpty())
-        assertEquals("Unavailable", readOnlyMethod.summary)
-        assertEquals(SystemPropertiesMethodOutcome.SUPPORT, readOnlyMethod.outcome)
         assertTrue(signals.isEmpty())
         assertEquals("Unavailable", method.summary)
         assertEquals(SystemPropertiesMethodOutcome.SUPPORT, method.outcome)

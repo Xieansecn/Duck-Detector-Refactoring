@@ -75,6 +75,7 @@ class SystemPropertiesCardModelMapper {
             SystemPropertiesStage.READY -> when {
                 report.hasDangerSignals -> "${report.dangerSignals.size} high-risk property or coherence signal(s)"
                 report.hasWarningSignals -> "${report.warningSignals.size} property signal(s) need review"
+                report.hasReducedCoverage() -> "System property scan has reduced coverage"
                 else -> "No risky property or coherence drift"
             }
         }
@@ -95,6 +96,9 @@ class SystemPropertiesCardModelMapper {
 
                 report.hasWarningSignals ->
                     "Cross-source drift, cross-property drift, or raw property-area residue suggests a review-worthy build or boot context, even if not every warning means active compromise."
+
+                report.hasReducedCoverage() ->
+                    "No risky property or coherence drift surfaced from available probes, but raw property-area layout coverage was unavailable."
 
                 else ->
                     "Key properties, framework constants, native libc reads, raw boot parameters, and property-area layout stayed aligned."
@@ -381,10 +385,17 @@ class SystemPropertiesCardModelMapper {
                 }
                 if (isEmpty()) {
                     add(
-                        SystemPropertiesImpactItemModel(
-                            text = "Observed key properties matched conservative production expectations across multiple read paths.",
-                            status = DetectorStatus.allClear(),
-                        ),
+                        if (report.hasReducedCoverage()) {
+                            SystemPropertiesImpactItemModel(
+                                text = "Observed properties matched conservative expectations, but raw property-area layout coverage was unavailable.",
+                                status = DetectorStatus.info(InfoKind.SUPPORT),
+                            )
+                        } else {
+                            SystemPropertiesImpactItemModel(
+                                text = "Observed key properties matched conservative production expectations across multiple read paths.",
+                                status = DetectorStatus.allClear(),
+                            )
+                        },
                     )
                 }
                 add(
@@ -432,7 +443,6 @@ class SystemPropertiesCardModelMapper {
                     "JVM hits",
                     "Native hits",
                     "Boot raw",
-                    "RO handles checked",
                     "Prop areas scanned",
                     "Prop area holes",
                     "Source mismatches",
@@ -452,7 +462,6 @@ class SystemPropertiesCardModelMapper {
                     "JVM hits",
                     "Native hits",
                     "Boot raw",
-                    "RO handles checked",
                     "Prop areas scanned",
                     "Prop area holes",
                     "Source mismatches",
@@ -508,13 +517,6 @@ class SystemPropertiesCardModelMapper {
                         label = "Boot raw",
                         value = report.bootParamHitCount.toString(),
                         status = if (report.bootParamHitCount > 0) DetectorStatus.allClear() else DetectorStatus.info(
-                            InfoKind.SUPPORT
-                        ),
-                    ),
-                    SystemPropertiesDetailRowModel(
-                        label = "RO handles checked",
-                        value = report.readOnlySerialCheckedCount.toString(),
-                        status = if (report.readOnlySerialAvailable) DetectorStatus.allClear() else DetectorStatus.info(
                             InfoKind.SUPPORT
                         ),
                     ),
@@ -641,7 +643,6 @@ class SystemPropertiesCardModelMapper {
             "Build constants",
             "Source consistency",
             "Cross-check rules",
-            "RO property handles",
             "Prop area layout",
             "Property catalog",
         ).map { label ->
@@ -721,9 +722,14 @@ class SystemPropertiesCardModelMapper {
             SystemPropertiesStage.READY -> when {
                 hasDangerSignals -> DetectorStatus.danger()
                 hasWarningSignals -> DetectorStatus.warning()
+                hasReducedCoverage() -> DetectorStatus.info(InfoKind.SUPPORT)
                 else -> DetectorStatus.allClear()
             }
         }
+    }
+
+    private fun SystemPropertiesReport.hasReducedCoverage(): Boolean {
+        return !propAreaAvailable
     }
 
     private fun isPropAreaHoleSignal(
