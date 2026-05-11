@@ -92,7 +92,7 @@ open class SelinuxContextValidityBridge {
         return SelinuxContextValiditySnapshot(
             failureReason = reason,
             dirtyPolicyFailureReason = reason,
-            dirtyPolicyQueryMethod = "libselinux selinux_check_access",
+            dirtyPolicyQueryMethod = "android.os.SELinux.checkSELinuxAccess",
             notes = listOf("SELinux context validity parser rejected the preloaded payload."),
             dirtyPolicyNotes = listOf("SELinux context validity parser rejected the preloaded payload."),
         )
