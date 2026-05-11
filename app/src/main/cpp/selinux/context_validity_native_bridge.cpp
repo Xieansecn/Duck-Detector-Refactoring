@@ -157,7 +157,8 @@ namespace {
                     "Native context validity bridge used a fallback payload.",
             };
             snapshot.dirty_policy.failure_reason = reason;
-            snapshot.dirty_policy.query_method = "libselinux selinux_check_access";
+            snapshot.dirty_policy.query_method =
+                    "android.os.SELinux.checkSELinuxAccess";
             snapshot.dirty_policy.notes = {
                     "Native context validity bridge used a fallback payload.",
             };
@@ -174,7 +175,7 @@ namespace {
                     "DIRTY_POLICY_CARRIER_MATCHES_EXPECTED=0\n"
                     "DIRTY_POLICY_CONTROLS_PASSED=0\n"
                     "DIRTY_POLICY_STABLE=0\n"
-                    "DIRTY_POLICY_QUERY_METHOD=libselinux selinux_check_access\n"
+                    "DIRTY_POLICY_QUERY_METHOD=android.os.SELinux.checkSELinuxAccess\n"
                     "DIRTY_POLICY_FAILURE_REASON=Native context validity bridge fallback failed.\n"
                     "DIRTY_POLICY_NOTE=Native context validity bridge returned a last-resort payload.\n"
                     "FAILURE_REASON=Native context validity bridge fallback failed.\n"
@@ -198,7 +199,9 @@ Java_com_eltavine_duckdetector_features_selinux_data_native_SelinuxContextValidi
     try {
         return to_jstring(
                 env,
-                encode_snapshot(duckdetector::selinux::collect_context_validity_snapshot())
+                encode_snapshot(
+                        duckdetector::selinux::collect_context_validity_snapshot(env)
+                )
         );
     } catch (const std::exception &error) {
         return to_jstring(env, fallback_snapshot_payload(error.what()));

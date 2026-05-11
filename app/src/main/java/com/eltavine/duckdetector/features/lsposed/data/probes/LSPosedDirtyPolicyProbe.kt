@@ -118,7 +118,7 @@ class LSPosedDirtyPolicyProbe {
             controlsPassed = snapshot.dirtyPolicyControlsPassed,
             stable = snapshot.dirtyPolicyStable,
             queryMethod = snapshot.dirtyPolicyQueryMethod.ifBlank {
-                "libselinux selinux_check_access"
+                "android.os.SELinux.checkSELinuxAccess"
             },
             accessControlAllowed = snapshot.dirtyPolicyAccessControlAllowed,
             negativeControlRejected = snapshot.dirtyPolicyNegativeControlRejected,

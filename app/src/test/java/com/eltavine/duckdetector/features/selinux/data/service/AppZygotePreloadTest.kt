@@ -38,7 +38,7 @@ class AppZygotePreloadTest {
         assertFalse(snapshot.available)
         assertEquals("boom\n\"quoted\"", snapshot.failureReason)
         assertFalse(snapshot.dirtyPolicyAvailable)
-        assertEquals("libselinux selinux_check_access", snapshot.dirtyPolicyQueryMethod)
+        assertEquals("android.os.SELinux.checkSELinuxAccess", snapshot.dirtyPolicyQueryMethod)
         assertEquals("boom\n\"quoted\"", snapshot.dirtyPolicyFailureReason)
         assertEquals(
             listOf("Kotlin preload fallback produced a parseable SELinux snapshot."),

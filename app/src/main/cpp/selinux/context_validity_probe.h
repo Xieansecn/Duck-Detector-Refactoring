@@ -17,6 +17,7 @@
 #ifndef DUCKDETECTOR_SELINUX_CONTEXT_VALIDITY_PROBE_H
 #define DUCKDETECTOR_SELINUX_CONTEXT_VALIDITY_PROBE_H
 
+#include <jni.h>
 #include <optional>
 #include <string>
 #include <vector>
@@ -61,7 +62,7 @@ namespace duckdetector::selinux {
         std::vector<std::string> notes;
     };
 
-    ContextValidityProbeSnapshot collect_context_validity_snapshot();
+    ContextValidityProbeSnapshot collect_context_validity_snapshot(JNIEnv *env);
 
 }  // namespace duckdetector::selinux
 

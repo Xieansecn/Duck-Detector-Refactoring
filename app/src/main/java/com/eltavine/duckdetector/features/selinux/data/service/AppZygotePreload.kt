@@ -18,13 +18,17 @@ package com.eltavine.duckdetector.features.selinux.data.service
 
 import android.app.ZygotePreload
 import android.content.pm.ApplicationInfo
+import android.system.Os
 import com.eltavine.duckdetector.features.selinux.data.native.SelinuxContextValidityBridge
 
 class AppZygotePreload : ZygotePreload {
 
-    override fun doPreload(p0: ApplicationInfo) {
+    override fun doPreload(appInfo: ApplicationInfo) {
         val result = runCatching {
-            if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) {
+            val currentUid = Os.getuid()
+            if (currentUid != appInfo.uid) {
+                fallbackPayload("UID mismatch: $currentUid != app uid ${appInfo.uid}.")
+            } else if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) {
                 fallbackPayload("SELinux native library unavailable.")
             } else {
                 SelinuxContextValidityBridge.nativeCollectContextValiditySnapshot()
@@ -49,7 +53,7 @@ class AppZygotePreload : ZygotePreload {
             append("DIRTY_POLICY_CARRIER_MATCHES_EXPECTED=0\n")
             append("DIRTY_POLICY_CONTROLS_PASSED=0\n")
             append("DIRTY_POLICY_STABLE=0\n")
-            append("DIRTY_POLICY_QUERY_METHOD=libselinux selinux_check_access\n")
+            append("DIRTY_POLICY_QUERY_METHOD=android.os.SELinux.checkSELinuxAccess\n")
             append("DIRTY_POLICY_FAILURE_REASON=").append(escapedReason).append('\n')
             append("DIRTY_POLICY_NOTE=Kotlin preload fallback produced a parseable SELinux snapshot.\n")
             append("FAILURE_REASON=").append(escapedReason).append('\n')

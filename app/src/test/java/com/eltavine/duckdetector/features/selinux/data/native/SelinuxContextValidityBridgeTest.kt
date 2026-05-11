@@ -49,7 +49,7 @@ class SelinuxContextValidityBridgeTest {
                 DIRTY_POLICY_CARRIER_MATCHES_EXPECTED=1
                 DIRTY_POLICY_CONTROLS_PASSED=1
                 DIRTY_POLICY_STABLE=1
-                DIRTY_POLICY_QUERY_METHOD=libselinux selinux_check_access
+                DIRTY_POLICY_QUERY_METHOD=android.os.SELinux.checkSELinuxAccess
                 DIRTY_POLICY_ACCESS_CONTROL_ALLOWED=1
                 DIRTY_POLICY_NEGATIVE_CONTROL_REJECTED=1
                 DIRTY_POLICY_SYSTEM_SERVER_EXECMEM_ALLOWED=0
@@ -84,7 +84,7 @@ class SelinuxContextValidityBridgeTest {
         assertTrue(snapshot.dirtyPolicyCarrierMatchesExpected)
         assertTrue(snapshot.dirtyPolicyControlsPassed)
         assertTrue(snapshot.dirtyPolicyStable)
-        assertEquals("libselinux selinux_check_access", snapshot.dirtyPolicyQueryMethod)
+        assertEquals("android.os.SELinux.checkSELinuxAccess", snapshot.dirtyPolicyQueryMethod)
         assertTrue(snapshot.dirtyPolicyAccessControlAllowed == true)
         assertTrue(snapshot.dirtyPolicyNegativeControlRejected == true)
         assertTrue(snapshot.dirtyPolicySystemServerExecmemAllowed == false)
