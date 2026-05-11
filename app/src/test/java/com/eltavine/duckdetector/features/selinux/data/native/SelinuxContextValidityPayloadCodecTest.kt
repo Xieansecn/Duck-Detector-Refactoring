@@ -47,7 +47,7 @@ class SelinuxContextValidityPayloadCodecTest {
             dirtyPolicyCarrierMatchesExpected = true,
             dirtyPolicyControlsPassed = true,
             dirtyPolicyStable = true,
-            dirtyPolicyQueryMethod = "SELinux.checkSELinuxAccess",
+            dirtyPolicyQueryMethod = "libselinux selinux_check_access",
             dirtyPolicyAccessControlAllowed = true,
             dirtyPolicyNegativeControlRejected = true,
             dirtyPolicySystemServerExecmemAllowed = false,

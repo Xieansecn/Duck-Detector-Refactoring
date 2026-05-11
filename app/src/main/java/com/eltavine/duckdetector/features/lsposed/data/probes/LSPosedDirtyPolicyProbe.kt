@@ -119,7 +119,7 @@ class LSPosedDirtyPolicyProbe {
             controlsPassed = snapshot.dirtyPolicyControlsPassed,
             stable = snapshot.dirtyPolicyStable,
             queryMethod = snapshot.dirtyPolicyQueryMethod.ifBlank {
-                "SELinux.checkSELinuxAccess"
+                "libselinux selinux_check_access"
             },
             accessControlAllowed = snapshot.dirtyPolicyAccessControlAllowed,
             negativeControlRejected = snapshot.dirtyPolicyNegativeControlRejected,

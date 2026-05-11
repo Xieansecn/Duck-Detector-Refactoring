@@ -19,51 +19,55 @@ package com.eltavine.duckdetector.features.selinux.data.service
 import android.app.ZygotePreload
 import android.content.pm.ApplicationInfo
 import com.eltavine.duckdetector.features.selinux.data.native.SelinuxContextValidityBridge
-import com.eltavine.duckdetector.features.selinux.data.native.SelinuxContextValidityPayloadCodec
-import com.eltavine.duckdetector.features.selinux.data.native.SelinuxContextValiditySnapshot
 
 class AppZygotePreload : ZygotePreload {
 
     override fun doPreload(p0: ApplicationInfo) {
-        val contextBridge = SelinuxContextValidityBridge()
-        val nativeSnapshot = if (SelinuxContextValidityBridge.isNativeLibraryLoaded) {
-            runCatching {
-                contextBridge.parse(
-                    SelinuxContextValidityBridge.nativeCollectContextValiditySnapshot(),
-                )
-            }.getOrElse { throwable ->
-                SelinuxContextValiditySnapshot(
-                    failureReason = throwable.message ?: "SELinux carrier probe failed.",
-                    notes = listOf("SELinux native context validity probe failed to preload."),
-                )
+        val result = runCatching {
+            if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) {
+                fallbackPayload("SELinux native library unavailable.")
+            } else {
+                SelinuxContextValidityBridge.nativeCollectContextValiditySnapshot()
+                    .ifBlank { fallbackPayload("SELinux native snapshot payload was empty.") }
             }
-        } else {
-            SelinuxContextValiditySnapshot(
-                failureReason = "SELinux native library unavailable.",
-                notes = listOf("SELinux native context validity probe could not preload."),
-            )
+        }.getOrElse { throwable ->
+            fallbackPayload(throwable.message ?: "SELinux app zygote preload failed.")
         }
+        SelinuxContextValidityBridge.setPreloadedRawData(result)
+    }
 
-        val dirtyPolicySnapshot = SelinuxDirtyPolicyCollector.collect(expectedUid = p0.uid)
-        val mergedSnapshot = nativeSnapshot.copy(
-            dirtyPolicyAvailable = dirtyPolicySnapshot.available,
-            dirtyPolicyProbeAttempted = dirtyPolicySnapshot.probeAttempted,
-            dirtyPolicyCarrierContext = dirtyPolicySnapshot.carrierContext,
-            dirtyPolicyCarrierMatchesExpected = dirtyPolicySnapshot.carrierMatchesExpected,
-            dirtyPolicyControlsPassed = dirtyPolicySnapshot.controlsPassed,
-            dirtyPolicyStable = dirtyPolicySnapshot.stable,
-            dirtyPolicyQueryMethod = dirtyPolicySnapshot.queryMethod,
-            dirtyPolicyAccessControlAllowed = dirtyPolicySnapshot.accessControlAllowed,
-            dirtyPolicyNegativeControlRejected = dirtyPolicySnapshot.negativeControlRejected,
-            dirtyPolicySystemServerExecmemAllowed = dirtyPolicySnapshot.systemServerExecmemAllowed,
-            dirtyPolicyMagiskBinderCallAllowed = dirtyPolicySnapshot.magiskBinderCallAllowed,
-            dirtyPolicyKsuBinderCallAllowed = dirtyPolicySnapshot.ksuBinderCallAllowed,
-            dirtyPolicyLsposedFileReadAllowed = dirtyPolicySnapshot.lsposedFileReadAllowed,
-            dirtyPolicyFailureReason = dirtyPolicySnapshot.failureReason,
-            dirtyPolicyNotes = dirtyPolicySnapshot.notes,
-        )
-        SelinuxContextValidityBridge.setPreloadedRawData(
-            SelinuxContextValidityPayloadCodec.encode(mergedSnapshot),
-        )
+    private fun fallbackPayload(reason: String): String {
+        val escapedReason = reason.escapePayloadValue()
+        return buildString {
+            append("AVAILABLE=0\n")
+            append("PROBE_ATTEMPTED=0\n")
+            append("CARRIER_MATCHES_EXPECTED=0\n")
+            append("ORACLE_CONTROLS_PASSED=0\n")
+            append("KSU_RESULTS_STABLE=0\n")
+            append("DIRTY_POLICY_AVAILABLE=0\n")
+            append("DIRTY_POLICY_PROBE_ATTEMPTED=0\n")
+            append("DIRTY_POLICY_CARRIER_MATCHES_EXPECTED=0\n")
+            append("DIRTY_POLICY_CONTROLS_PASSED=0\n")
+            append("DIRTY_POLICY_STABLE=0\n")
+            append("DIRTY_POLICY_QUERY_METHOD=libselinux selinux_check_access\n")
+            append("DIRTY_POLICY_FAILURE_REASON=").append(escapedReason).append('\n')
+            append("DIRTY_POLICY_NOTE=Kotlin preload fallback produced a parseable SELinux snapshot.\n")
+            append("FAILURE_REASON=").append(escapedReason).append('\n')
+            append("NOTE=Kotlin preload fallback produced a parseable SELinux snapshot.\n")
+        }
+    }
+
+    private fun String.escapePayloadValue(): String {
+        return buildString(length) {
+            this@escapePayloadValue.forEach { ch ->
+                when (ch) {
+                    '\\' -> append("\\\\")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> append(ch)
+                }
+            }
+        }
     }
 }

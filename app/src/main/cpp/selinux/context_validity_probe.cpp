@@ -19,9 +19,10 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <dlfcn.h>
+#include <exception>
 #include <fcntl.h>
 #include <fstream>
-#include <cstring>
 #include <string>
 #include <utility>
 #include <unistd.h>
@@ -40,6 +41,25 @@ namespace duckdetector::selinux {
         constexpr const char *kNegativeFileControlContext =
                 "u:object_r:duckdetector_context_oracle_sentinel_file:s0";
         constexpr const char *kQueryMethod = "raw selinuxfs write";
+        constexpr const char *kDirtyPolicyQueryMethod = "libselinux selinux_check_access";
+        constexpr const char *kAppZygoteContext = "u:r:app_zygote:s0";
+        constexpr const char *kIsolatedAppContext = "u:r:isolated_app:s0";
+        constexpr const char *kUntrustedAppContext = "u:r:untrusted_app:s0";
+        constexpr const char *kDirtyPolicySentinelFileContext =
+                "u:object_r:duckdetector_dirty_policy_sentinel:s0";
+        constexpr const char *kSystemServerContext = "u:r:system_server:s0";
+        constexpr const char *kMagiskContext = "u:r:magisk:s0";
+        constexpr const char *kLsposedFileContext = "u:object_r:lsposed_file:s0";
+
+        using SelinuxCheckAccessFn = int (*)(
+                const char *scon,
+                const char *tcon,
+                const char *tclass,
+                const char *perm,
+                void *auditdata
+        );
+        using IsSelinuxEnabledFn = int (*)();
+        using SecurityGetenforceFn = int (*)();
 
         struct ContextCheckResult {
             std::optional<bool> valid;
@@ -49,6 +69,19 @@ namespace duckdetector::selinux {
         struct ControlPairResult {
             ContextCheckResult first;
             ContextCheckResult second;
+            bool stable = false;
+        };
+
+        struct DirtyPolicySymbols {
+            void *handle = nullptr;
+            bool owns_handle = false;
+            SelinuxCheckAccessFn check_access = nullptr;
+            IsSelinuxEnabledFn is_enabled = nullptr;
+            SecurityGetenforceFn getenforce = nullptr;
+        };
+
+        struct DirtyPolicyStableAccessCheck {
+            std::optional<bool> value;
             bool stable = false;
         };
 
@@ -99,6 +132,12 @@ namespace duckdetector::selinux {
             }
         }
 
+        void append_dirty_note(DirtyPolicyProbeSnapshot &snapshot, std::string note) {
+            if (!note.empty()) {
+                snapshot.notes.push_back(std::move(note));
+            }
+        }
+
         void append_boolean_note(
                 ContextValidityProbeSnapshot &snapshot,
                 const char *label,
@@ -120,6 +159,338 @@ namespace duckdetector::selinux {
         }
 
         ContextCheckResult check_context_validity(const char *context);
+        DirtyPolicyProbeSnapshot collect_dirty_policy_snapshot(
+                const std::string &carrier_context
+        );
+
+        template<typename T>
+        T resolve_symbol(
+                void *handle,
+                const char *symbol
+        ) {
+            return reinterpret_cast<T>(dlsym(handle, symbol));
+        }
+
+        DirtyPolicySymbols load_dirty_policy_symbols() {
+            DirtyPolicySymbols symbols;
+            symbols.check_access = resolve_symbol<SelinuxCheckAccessFn>(
+                    RTLD_DEFAULT,
+                    "selinux_check_access"
+            );
+            symbols.is_enabled = resolve_symbol<IsSelinuxEnabledFn>(
+                    RTLD_DEFAULT,
+                    "is_selinux_enabled"
+            );
+            symbols.getenforce = resolve_symbol<SecurityGetenforceFn>(
+                    RTLD_DEFAULT,
+                    "security_getenforce"
+            );
+            if (symbols.check_access != nullptr) {
+                return symbols;
+            }
+
+#ifdef RTLD_NOLOAD
+            symbols.handle = dlopen("libselinux.so", RTLD_NOW | RTLD_NOLOAD);
+#endif
+            if (symbols.handle == nullptr) {
+                return symbols;
+            }
+
+            symbols.owns_handle = true;
+            symbols.check_access = resolve_symbol<SelinuxCheckAccessFn>(
+                    symbols.handle,
+                    "selinux_check_access"
+            );
+            symbols.is_enabled = resolve_symbol<IsSelinuxEnabledFn>(
+                    symbols.handle,
+                    "is_selinux_enabled"
+            );
+            symbols.getenforce = resolve_symbol<SecurityGetenforceFn>(
+                    symbols.handle,
+                    "security_getenforce"
+            );
+            return symbols;
+        }
+
+        DirtyPolicyProbeSnapshot dirty_policy_failure(std::string message) {
+            DirtyPolicyProbeSnapshot snapshot;
+            snapshot.query_method = kDirtyPolicyQueryMethod;
+            snapshot.failure_reason = message;
+            snapshot.notes.push_back(std::move(message));
+            return snapshot;
+        }
+
+        DirtyPolicyProbeSnapshot safe_collect_dirty_policy_snapshot(
+                const std::string &carrier_context
+        ) {
+            try {
+                return collect_dirty_policy_snapshot(carrier_context);
+            } catch (const std::exception &error) {
+                return dirty_policy_failure(
+                        std::string("Dirty policy probe failed: ") + error.what()
+                );
+            } catch (...) {
+                return dirty_policy_failure(
+                        "Dirty policy probe failed with an unknown native exception."
+                );
+            }
+        }
+
+        bool dirty_policy_access_allowed(
+                const DirtyPolicySymbols &symbols,
+                const char *source_context,
+                const char *target_context,
+                const char *class_name,
+                const char *permission
+        ) {
+            return symbols.check_access(
+                    source_context,
+                    target_context,
+                    class_name,
+                    permission,
+                    nullptr
+            ) == 0;
+        }
+
+        DirtyPolicyStableAccessCheck repeat_dirty_policy_access_check(
+                const DirtyPolicySymbols &symbols,
+                const char *source_context,
+                const char *target_context,
+                const char *class_name,
+                const char *permission
+        ) {
+            const bool first = dirty_policy_access_allowed(
+                    symbols,
+                    source_context,
+                    target_context,
+                    class_name,
+                    permission
+            );
+            const bool second = dirty_policy_access_allowed(
+                    symbols,
+                    source_context,
+                    target_context,
+                    class_name,
+                    permission
+            );
+            return {
+                    .value = first == second ? std::optional<bool>(first) : std::nullopt,
+                    .stable = first == second,
+            };
+        }
+
+        DirtyPolicyProbeSnapshot collect_dirty_policy_snapshot(
+                const std::string &carrier_context
+        ) {
+            DirtyPolicyProbeSnapshot snapshot;
+            snapshot.query_method = kDirtyPolicyQueryMethod;
+
+            DirtyPolicySymbols symbols = load_dirty_policy_symbols();
+            if (symbols.check_access == nullptr) {
+                return dirty_policy_failure("libselinux selinux_check_access unavailable.");
+            }
+            snapshot.available = true;
+
+            if (symbols.is_enabled != nullptr && symbols.is_enabled() <= 0) {
+                snapshot.failure_reason = "SELinux is disabled.";
+                append_dirty_note(snapshot, snapshot.failure_reason);
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+            if (symbols.getenforce != nullptr && symbols.getenforce() == 0) {
+                snapshot.failure_reason = "SELinux is permissive.";
+                append_dirty_note(snapshot, snapshot.failure_reason);
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            if (carrier_context.empty()) {
+                snapshot.failure_reason = "Current process SELinux context unreadable.";
+                append_dirty_note(snapshot, snapshot.failure_reason);
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            snapshot.carrier_context = carrier_context;
+            snapshot.carrier_matches_expected = context_type(carrier_context) == kExpectedCarrierType;
+            append_dirty_note(snapshot, std::string("Carrier context: ") + carrier_context);
+            append_dirty_note(snapshot, std::string("Expected carrier type: ") + kExpectedCarrierType);
+            append_dirty_note(snapshot, std::string("Query method: ") + kDirtyPolicyQueryMethod);
+
+            if (!snapshot.carrier_matches_expected) {
+                snapshot.failure_reason = "Carrier context is not app_zygote.";
+                append_dirty_note(snapshot, snapshot.failure_reason);
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            snapshot.probe_attempted = true;
+
+            const DirtyPolicyStableAccessCheck access_control =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kAppZygoteContext,
+                            kIsolatedAppContext,
+                            "process",
+                            "dyntransition"
+                    );
+            const DirtyPolicyStableAccessCheck negative_control =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kUntrustedAppContext,
+                            kDirtyPolicySentinelFileContext,
+                            "file",
+                            "read"
+                    );
+
+            snapshot.access_control_allowed = access_control.value;
+            snapshot.negative_control_rejected =
+                    negative_control.value.has_value()
+                    ? std::optional<bool>(!*negative_control.value)
+                    : std::nullopt;
+
+            if (!access_control.stable || !negative_control.stable) {
+                snapshot.failure_reason = "Dirty policy oracle self-test failed.";
+                append_dirty_note(
+                        snapshot,
+                        std::string("Positive control stable=") +
+                        (access_control.stable ? "true" : "false")
+                );
+                append_dirty_note(
+                        snapshot,
+                        std::string("Negative control stable=") +
+                        (negative_control.stable ? "true" : "false")
+                );
+                append_dirty_note(
+                        snapshot,
+                        "The SELinux access oracle was not trusted because its controls were unstable."
+                );
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            if (access_control.value != true || negative_control.value == true) {
+                snapshot.stable = true;
+                snapshot.failure_reason = "Dirty policy oracle self-test failed.";
+                append_dirty_note(
+                        snapshot,
+                        std::string("Positive control accepted=") +
+                        (access_control.value == true ? "true" : "false")
+                );
+                append_dirty_note(
+                        snapshot,
+                        std::string("Negative control rejected=") +
+                        (snapshot.negative_control_rejected == true ? "true" : "false")
+                );
+                append_dirty_note(snapshot, "The SELinux access oracle did not pass its self-test.");
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            const DirtyPolicyStableAccessCheck system_server_execmem =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kSystemServerContext,
+                            kSystemServerContext,
+                            "process",
+                            "execmem"
+                    );
+            const DirtyPolicyStableAccessCheck magisk_binder_call =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kUntrustedAppContext,
+                            kMagiskContext,
+                            "binder",
+                            "call"
+                    );
+            const DirtyPolicyStableAccessCheck ksu_binder_call =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kUntrustedAppContext,
+                            kKsuContext,
+                            "binder",
+                            "call"
+                    );
+            const DirtyPolicyStableAccessCheck lsposed_file_read =
+                    repeat_dirty_policy_access_check(
+                            symbols,
+                            kUntrustedAppContext,
+                            kLsposedFileContext,
+                            "file",
+                            "read"
+                    );
+
+            snapshot.controls_passed = true;
+            snapshot.stable = system_server_execmem.stable &&
+                              magisk_binder_call.stable &&
+                              ksu_binder_call.stable &&
+                              lsposed_file_read.stable;
+
+            append_dirty_note(
+                    snapshot,
+                    std::string("Positive control accepted=") +
+                    (access_control.value == true ? "true" : "false")
+            );
+            append_dirty_note(
+                    snapshot,
+                    std::string("Negative control rejected=") +
+                    (snapshot.negative_control_rejected == true ? "true" : "false")
+            );
+            append_dirty_note(
+                    snapshot,
+                    std::string("system_server execmem=") +
+                    (system_server_execmem.value == true ? "true" : "false")
+            );
+            append_dirty_note(
+                    snapshot,
+                    std::string("Magisk binder call=") +
+                    (magisk_binder_call.value == true ? "true" : "false")
+            );
+            append_dirty_note(
+                    snapshot,
+                    std::string("KernelSU binder call=") +
+                    (ksu_binder_call.value == true ? "true" : "false")
+            );
+            append_dirty_note(
+                    snapshot,
+                    std::string("LSPosed file read=") +
+                    (lsposed_file_read.value == true ? "true" : "false")
+            );
+
+            if (!snapshot.stable) {
+                snapshot.failure_reason = "Dirty policy oracle repeatability failed.";
+                append_dirty_note(
+                        snapshot,
+                        "One or more dirty policy queries were unstable across repeated checks."
+                );
+                if (symbols.owns_handle && symbols.handle != nullptr) {
+                    dlclose(symbols.handle);
+                }
+                return snapshot;
+            }
+
+            snapshot.system_server_execmem_allowed = system_server_execmem.value;
+            snapshot.magisk_binder_call_allowed = magisk_binder_call.value;
+            snapshot.ksu_binder_call_allowed = ksu_binder_call.value;
+            snapshot.lsposed_file_read_allowed = lsposed_file_read.value;
+
+            if (symbols.owns_handle && symbols.handle != nullptr) {
+                dlclose(symbols.handle);
+            }
+            return snapshot;
+        }
 
         bool pair_matches_expected(
                 const ControlPairResult &pair,
@@ -203,6 +574,7 @@ namespace duckdetector::selinux {
         snapshot.query_method = kQueryMethod;
 
         const std::string carrier_context = read_process_context();
+        snapshot.dirty_policy = safe_collect_dirty_policy_snapshot(carrier_context);
         if (carrier_context.empty()) {
             snapshot.failure_reason = "Current process SELinux context unreadable.";
             return snapshot;
