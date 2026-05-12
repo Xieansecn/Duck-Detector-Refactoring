@@ -18,7 +18,6 @@ package com.eltavine.duckdetector.features.selinux.presentation
 
 import com.eltavine.duckdetector.core.ui.model.DetectorStatus
 import com.eltavine.duckdetector.features.selinux.data.probes.SelinuxContextValidityProbe
-import com.eltavine.duckdetector.features.selinux.data.probes.SelinuxProcAttrCurrentProbe
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxCheckResult
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxMode
 import com.eltavine.duckdetector.features.selinux.domain.SelinuxReport
@@ -60,21 +59,20 @@ class SelinuxCardModelMapperContextValidityTest {
             baseReport(
                 SelinuxCheckResult(
                     method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_KSU_PRESENT,
+                    status = SelinuxContextValidityProbe.STATUS_ROOT_CONTEXT_FOUND,
                     isSecure = false,
                     permissionDenied = false,
-                    details = "Both KSU-specific contexts were found by live policy.",
+                    details = "Root contexts were found by live policy.",
                 ),
             ),
         )
 
         assertEquals(DetectorStatus.danger(), model.status)
-        assertEquals("Enforcing with KSU context materialized", model.verdict)
-        assertTrue(model.summary.contains("accepted both KSU-specific contexts"))
+        assertEquals("Enforcing with Root context materialized", model.verdict)
+        assertTrue(model.summary.contains(SelinuxContextValidityProbe.STATUS_ROOT_CONTEXT_FOUND))
         assertTrue(
             model.impactItems.any {
-                it.text.contains("validated both KSU-specific contexts") ||
-                    it.text.contains("accepted both KSU-specific contexts")
+                it.text.contains("validated root contexts")
             },
         )
     }
@@ -85,7 +83,7 @@ class SelinuxCardModelMapperContextValidityTest {
             baseReport(
                 SelinuxCheckResult(
                     method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_SELF_TEST_FAILED,
+                    status = SelinuxContextValidityProbe.STATUS_ORACLE_SELF_TEST_FAILED,
                     isSecure = null,
                     permissionDenied = false,
                     details = "Context validity oracle failed its self-test.",
@@ -109,7 +107,7 @@ class SelinuxCardModelMapperContextValidityTest {
             baseReport(
                 SelinuxCheckResult(
                     method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_UNSUPPORTED,
+                    status = SelinuxContextValidityProbe.STATUS_ORACLE_BLOCKED,
                     isSecure = null,
                     permissionDenied = false,
                     details = "Unavailable: u:r:app_zygote:s0 errno=Permission denied",
@@ -117,12 +115,12 @@ class SelinuxCardModelMapperContextValidityTest {
             ),
         )
 
-        assertEquals(DetectorStatus.allClear(), model.status)
-        assertEquals("Enforcing", model.verdict)
-        assertTrue(model.summary.contains("Unavailable: u:r:app_zygote:s0 errno=Permission denied"))
+        assertEquals(DetectorStatus.warning(), model.status)
+        assertEquals("Enforcing with app_zygote SELinux query blocked", model.verdict)
+        assertTrue(model.summary.contains("app_zygote SELinux context queries were blocked"))
         assertTrue(
             model.impactItems.any {
-                it.text.contains("Unavailable: u:r:app_zygote:s0 errno=Permission denied")
+                it.text.contains("unexpected for the stock app_zygote domain")
             },
         )
     }
@@ -133,26 +131,20 @@ class SelinuxCardModelMapperContextValidityTest {
             baseReport(
                 SelinuxCheckResult(
                     method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_UNSUPPORTED,
+                    status = SelinuxContextValidityProbe.STATUS_ORACLE_UNAVAILABLE,
                     isSecure = null,
                     permissionDenied = false,
-                    details = "Evidence source=local native fallback | No preloaded data available. Check AppZygotePreload status.",
+                    details = "No preloaded data available. Check AppZygotePreload status.",
                 ),
             ),
         )
 
-        assertEquals(DetectorStatus.allClear(), model.status)
-        assertEquals("Enforcing", model.verdict)
-        assertTrue(model.summary.contains("No preloaded data available"))
+        assertEquals(DetectorStatus.info(com.eltavine.duckdetector.core.ui.model.InfoKind.SUPPORT), model.status)
+        assertEquals("Enforcing with unavailable context oracle", model.verdict)
+        assertTrue(model.summary.contains("app_zygote carrier snapshot was unavailable"))
         assertTrue(
             model.impactItems.any {
-                it.text.contains("No preloaded data available")
-            },
-        )
-        assertTrue(
-            model.methodRows.any {
-                it.label == SelinuxContextValidityProbe.METHOD_LABEL &&
-                    it.detail?.contains("Evidence source=local native fallback") == true
+                it.text.contains("context oracle was unavailable")
             },
         )
     }
@@ -163,7 +155,7 @@ class SelinuxCardModelMapperContextValidityTest {
             baseReport(
                 SelinuxCheckResult(
                     method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_SELF_TEST_FAILED,
+                    status = SelinuxContextValidityProbe.STATUS_ORACLE_UNSTABLE,
                     isSecure = null,
                     permissionDenied = false,
                     details = "Context validity oracle repeatability failed.",
@@ -181,45 +173,14 @@ class SelinuxCardModelMapperContextValidityTest {
         )
     }
 
-    @Test
-    fun `app zygote attr write anomaly maps to danger copy`() {
-        val model = mapper.map(
-            baseReport(
-                SelinuxCheckResult(
-                    method = SelinuxContextValidityProbe.METHOD_LABEL,
-                    status = SelinuxContextValidityProbe.BITPAIR_CLEAN,
-                    isSecure = true,
-                    permissionDenied = false,
-                    details = "Pair 00",
-                ),
-                SelinuxCheckResult(
-                    method = SelinuxProcAttrCurrentProbe.METHOD_LABEL,
-                    status = "Detected: Magisk, LSPosed file",
-                    isSecure = false,
-                    permissionDenied = false,
-                    details = "Magisk=DETECTED_NON_EINVAL | LSPosed file=SUCCESS",
-                ),
-            ),
-        )
-
-        assertEquals(DetectorStatus.danger(), model.status)
-        assertEquals("Enforcing with app_zygote attr-write anomaly", model.verdict)
-        assertTrue(model.summary.contains("Magisk, LSPosed file"))
-        assertTrue(
-            model.impactItems.any {
-                it.text.contains("anomalous /proc/self/attr/current writes")
-            },
-        )
-    }
-
-    private fun baseReport(vararg methods: SelinuxCheckResult): SelinuxReport {
+    private fun baseReport(contextResult: SelinuxCheckResult): SelinuxReport {
         return SelinuxReport(
             stage = SelinuxStage.READY,
             mode = SelinuxMode.ENFORCING,
             resolvedStatusLabel = "Enforcing",
             filesystemMounted = true,
             paradoxDetected = false,
-            methods = methods.toList(),
+            methods = listOf(contextResult),
             processContext = "u:r:untrusted_app:s0:c1,c2",
             contextType = "untrusted_app",
             policyAnalysis = null,

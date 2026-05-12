@@ -73,7 +73,6 @@ class LSPosedDirtyPolicyProbeTest {
                 dirtyPolicyAccessControlAllowed = true,
                 dirtyPolicyNegativeControlRejected = true,
                 dirtyPolicyMagiskBinderCallAllowed = true,
-                dirtyPolicyKsuFileReadAllowed = false,
                 dirtyPolicyLsposedFileReadAllowed = false,
             ),
         )
@@ -109,11 +108,11 @@ class LSPosedDirtyPolicyProbeTest {
             ),
         )
 
-        assertFalse(result.available)
-        assertEquals("Unavailable", result.summary)
-        assertEquals(LSPosedMethodOutcome.SUPPORT, result.outcome)
-        assertEquals(0, result.hitCount)
-        assertTrue(result.signals.isEmpty())
+        assertTrue(result.available)
+        assertEquals("LSPosed rule present", result.summary)
+        assertEquals(LSPosedMethodOutcome.DETECTED, result.outcome)
+        assertEquals(1, result.hitCount)
+        assertTrue(result.signals.any { it.label == "LSPosed file read" })
         assertTrue(result.detail.contains("controls=failed"))
     }
 
