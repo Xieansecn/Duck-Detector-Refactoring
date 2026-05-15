@@ -3,9 +3,6 @@ name: Publish Latest GitHub Release
 # This workflow is intentionally additive: nightly build/push logic stays in build.yml,
 # while tagged/manual release publication lives here to keep release risk isolated.
 on:
-  push:
-    tags:
-      - '*'
   workflow_dispatch:
     inputs:
       tag_name:
